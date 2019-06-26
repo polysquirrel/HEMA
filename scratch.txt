@@ -135,7 +135,7 @@ pole axe (halberd):
 	8 speed factor
 	>8 STR
 
-dart:
+dart: ???
 	+1 APR
 	*no strength damage bonus
 
@@ -213,6 +213,7 @@ small shield:
 	-0/1/2/2 AC 
 	+10% crushing resistance
 	-1 save vs wand  
+        +1 speed factor
 
 medium shield:
 	-2/3/3/3 AC
