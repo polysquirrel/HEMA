@@ -1,0 +1,22 @@
+//name/prof           AC       crit speed THAC0 DMG APR  THAC0 DMG
+//Single-Weapon style
+Fencing,              _,       -,   -,    -,    -,  -,   -,    -
+*,                    0/1/1/1, 1,   2,    1,    1,  0,   -,    -  
+**,                   0/2/2/2, 3,   3,    2,    1,  0,   1,    - 
+
+//Two-weapon  style: AC and other bonuses from OH weapon always apply 
+Dual-wielding,        -,       0,   0,    -2,   0,  0,   -,    -
+*,                    -,       0,   0,    -2,   0,  0.5, -4,   -3
+**,                   -,       0,   0,    0,    0,  0.5, -3,   -1
+***,                  -,       0,   0     0,    0,  1,   -2,   0
+
+//Sword & Shield: shield carry penalties removed at (*)
+Shield use            -,       -,   -,    -,    -,  -,   -,    -
+*,                    1/1/1/1, 0,   0,    0,    0,  -,   -,    -
+**,                   2/2/2/2, 0,   1,    0,    0,  -,   -,    -
+
+//Two-handed weapon
+Two-handed weapons,   -,       -,   -,    -,    -,  -,   -,    -
+*,                    0/1/1/1, 0,   1,    0,    1,  -,   -,    -
+**,                   0/1/1/1, 0,   1,    0,    4,  -,   -,    -
+

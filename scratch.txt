@@ -1,0 +1,263 @@
+1. Weapons
+
+dagger: 
+	1d4 piercing
+	+1 APR (same as returning daggers)
+	-2 THAC0
+	+2 crit
+	*no strength DMG bonus
+	2 speed factor
+	>3 STR
+
+small sword (short sword):
+	1d4+2 piercing 
+	-1 THAC0
+	+1 crit
+	-0/1/1/1 AC 
+	*no strength DMG bonus
+	3 speed factor
+	>5 STR
+
+arming sword/knigthtly sword (long sword):
+	1d8 slashing/piercing
+	-0/2/2/2 AC 
+	6 speed factor
+	>10 STR
+
+bastard sword:
+	2d4+1 slashing/piercing
+	-0/2/2/2 AC
+	+1 THAC0
+	8 speed factor
+	>14 STR
+	*long sword proficiency
+	*prohibited off-hand use
+
+sabre* (scimitar):
+	1d8 slashing
+	-1 THAC0 
+	-0/2/2/2 AC (-0/3/3/2 AC?)
+	5 speed factor
+	>8 STR
+
+long sword (bastard sword):
+	1d10 slashing/piercing
+	-1 THAC0
+	-0/3/3/3 AC
+	5 speed factor
+	>8 STR
+	*range 1
+	*2H!
+	*available to Thieves 
+	*some of magical long swords will be converted to new long swords
+
+great sword (two handed sword):
+	2d6 slashing (/piercing?)
+	+1 crit (?)
+	-0/3/3/3 AC
+	10 speed factor
+	>14 STR
+	*2H
+	
+wakizashi:
+	1d6+2 slashing
+	-0/1/1/1 AC
+	6 speed factor
+	>9 STR
+	*available to thieves
+
+katana:
+	2d4+2 slashing
+	-0/2/2/2 AC (-2/2/2/2 ?)
+	6 speed factor
+	>9 STR
+	*2H! (what animation???)
+	*range 1
+
+ninjato:
+	1d8 slashing/piercing
+	-2/2/2/2 AC
+	7 speed factor
+	>10 STR
+
+axe:
+	2d4+1 slashing
+	-0/1/1/1 AC
+	7 speed factor
+	>10 STR
+
+warhammer:
+	1d6 piercing/crushing
+	-1 THAC0
+	-0/1/1/1 AC
+	7 speed factor
+	>10 STR
+
+mace:
+	1d8 crushing
+	8 speed factor
+	>11 STR
+
+morningstar: 
+	1d10 crushing
+	9 speed factor
+	>14 STR
+	*mace specialization
+
+club:
+	1d4+2 crushing
+	8 speed factor
+	>12 STR
+
+flail:
+	1d12
+	-1 crit
+	10 speed factor
+	>14 STR
+	*no strength DMG bonus?
+	
+staff:
+	1d6 crushing
+	-0/3/3/3 AC
+	6 speed factor
+	>5 STR
+
+spear:
+	2d4 piercing
+	-2 THAC0
+	-0/3/3/3 AC
+	4 speed factor
+	>5 STR
+	
+pole axe (halberd):
+	2d6 slashing/piercing/crushing
+	-0/2/2/2 AC
+	8 speed factor
+	>8 STR
+
+dart:
+	+1 APR
+	*no strength damage bonus
+
+thrown dagger:
+	1d4
+	+0 APR
+	*no melee ability
+	*new thrown dagger proficiency?
+
+thrown axe:
+	1d6
+	+2 THAC0
+	+0 APR
+	*no melee ability
+	*new thrown axe proficiency (?)
+
+shortbow:
+	+1.5 APR
+	+1 THAC0
+	5 speed factor
+	>10 STR
+	*available to druids
+
+longbow:
+	+1 APR
+	+1 THAC0
+	+1 DMG
+	7 speed factor
+	>12 STR
+	*available to druids
+
+warbow:
+	+1 APR
+	+1 THAC0
+	+2 DMG
+	>16 STR
+	*longbow proficiency
+	*available to druids
+
+heavy warbow (composite bow):
+	+1 APR
+	+1 THAC0
+	+3 DMG 
+	7 speed factor
+	>18 STR
+	*available to druids
+
+
+
+light crossbow:
+	-1 THAC0
+	*available to thieves, mages (druids?)
+
+heavy crossbow:
+	-1 THAC0
+	+3 DMG
+	*available to thieves mages (druids?)
+
+bullet:
+
+sling:
+	+2 THAC0
+	*strength bonus
+
+
+
+
+3. Shields:
+
+buckler:
+	-0/1/1/1 AC 
+	+10% crushing resistance
+
+small shield:	
+	-0/1/2/2 AC 
+	+10% crushing resistance
+	-1 save vs wand  
+
+medium shield:
+	-2/3/3/3 AC
+	+15% crushing resistance
+	-1 save vs breath
+	-1 save vs wand
+	+2 speed factor (penalty, removed by the shield-fighting style)
+	+1 THAC0 (penalty, removed by the shield-fighting style)
+
+large shield:
+	-4/4/4/4 AC
+	+15% crushing resistance
+	-2 save vs breath
+	-2 save vs wand
+	+2 speed factor
+	+1 THAC0 (penalty, removed by the shield-fighting style)
+	-0.5 APR (removed by the shield-fighting style)
+
+
+
+
+
+
+2. Weapon styles
+
+
+Fencing (Single Weapon style):
+	()
+	(+)  -1 THAC0, +1 crit, -1 speed factor, -0/1/1/1 AC 
+	(++) -3 THAC0, +3 crit, +1 DMG, -2 speed factor, -0/2/2/2 AC
+
+Shield-Fighting (Sword & Shield):
+	()   shields carry speed factor, THAC0 and APR penalties 
+	(+)  No shield penalties, -1 AC (?)
+	(++) No shield penalties, -2 AC, -1 THAC0
+
+Two-handed Weapon fighting:
+	() 
+	(+)  -1 THAC0, +1 DMG, -1 speed factor, -0/1/1/1 AC
+	(++) -2 THAC0, +4 DMG, -1 speed factor, -0/1/1/1 AC
+
+Dual-wielding (Two-weapon style): 
+	()    MH: +2 THAC0; OH: 0 APR
+	(+)   MH: +2 THAC0; OH: +4 THAC0, -3 DMG, +0.5 APR  
+	(++)  OH: +2 THAC0; -1 DMG, +0.5 APR
+	(+++) OH: +2 THAC0, +1 APR
+
+	

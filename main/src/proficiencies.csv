@@ -1,0 +1,27 @@
+//prof name
+//short sword
+91,    002
+//'one-handed swords': arming sword/bastard sword (ex. longsword)
+90,    003
+//scimitar/wakizashi/ninjato
+95,    005
+//longswords (ex bastard sword)
+89,    006
+//great swords (ex two-handed sword)
+93,    007
+//warhammers & maces
+97,    010
+//morningstars (ex mace)
+101,   011
+//flails (ex flail/morningstar)
+100,   012
+//pole axes/2H Axes (ex halberds)
+100,   016
+
+
+//katana: 94
+//axe: 92
+//club: 115
+//quaterstaff: 102
+//spear: 98
+

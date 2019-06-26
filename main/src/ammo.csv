@@ -1,0 +1,6 @@
+//item    name  lbs dmg #dice die +x bonus THAC0
+BULL01,   -,    1,  MC, 1,    6,  0, Y,    0
+AROW01,   -,    1,  M,  1,    4,  1, N,    0
+BOLT01,   -,    1,  M,  1,    6,  1, N,    0
+
+//damage type: missile - 4; blunt missile - 9
