@@ -101,13 +101,25 @@ case "$#" in
 			test)
 				for GAMEDIR in "test/Baldur's Gate" "test/Baldur's Gate EE" "test/Siege of Dragonspear" "test/Baldur's Gate 2" "test/Baldur's Gate 2 EE" "test/Icewind Dale" "test/Icewind Dale EE"; do
 					if [[ tested!=1 && -d "$GAMEDIR" ]]; then
+						if [[ -f "$GAMEDIR/setup-json.tp2" ]]; then
+							cd "$GAMEDIR"
+							"./setup-json$extension" --uninstall
+							cd -
+						fi
+						mkdir "$GAMEDIR/json"
+
 						cp test/src/setup-json.tp2 "$GAMEDIR"
-						cp main/src/json.tpa "$GAMEDIR"
+						cp main/src/json.tpa main/src/stringutil.tpa "$GAMEDIR/json"
 						cp main/bin/weidu-$system$extnesion "$GAMEDIR/setup-json$extension"
 						cd "$GAMEDIR"
 						"./setup-json$extension" --yes
+						if [[ "$?" != 0 ]]; then 
+							cd -
+							exit $?
+						fi
+						"./setup-json$extension" --uninstall
 						cd -
-						exit $?
+						break
 					fi
 				done
 				;;

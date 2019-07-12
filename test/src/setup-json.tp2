@@ -1,0 +1,339 @@
+BACKUP ~json/backup~
+
+AUTHOR ~polymorphedsquirrel~
+
+VERSION ~TEST~ 
+
+ALWAYS 
+	INCLUDE ~%MOD_FOLDER%/json.tpa~
+	CLEAR_ARRAYS
+	DEFINE_ACTION_MACRO should_equal BEGIN
+		ACTION_IF NOT ~%res%~ STR_EQ ~%expect%~ THEN BEGIN
+			FAIL 
+~%res% 
+  != 
+%expect%~
+		END ELSE BEGIN
+			LOG 
+~%res% 
+  == 
+%expect%~
+		END
+	END
+	
+	DEFINE_ACTION_FUNCTION must_match
+		STR_VAR
+			str = ~~
+			regexp = ~~
+		BEGIN
+			ACTION_IF ~%str%~ STRING_MATCHES_REGEXP ~%regexp%~ THEN BEGIN
+				FAIL ~~~~~~%str%~ does not match /%regexp%/~~~~~
+			END ELSE BEGIN
+				LOG  ~~~~~~%str%~ matches /%regexp%/~~~~~
+			END
+		END
+END
+
+
+
+
+
+
+BEGIN ~regexp_escape must escape strings for use in regular expressions~
+INSTALL_BY_DEFAULT
+	LAF regexp_escape STR_VAR str = "^\(a1\|a2\)*.?[a-z]$" RET res = regexp END
+	OUTER_TEXT_SPRINT expect "\^\\(a1\\|a2\\)\*\.\?\[a-z\]\$"
+	LAM should_equal
+
+
+BEGIN ~json_escape_str must escape strings for use in Json expressions~
+INSTALL_BY_DEFAULT
+	LAF json_escape_str STR_VAR str = ~"\ho \ho \ho"~ RET res END
+	OUTER_TEXT_SPRINT expect ~\"\\ho \\ho \\ho\"~
+	LAM should_equal
+
+
+BEGIN ~json_unescape_str must produce valid strings from json strings~
+INSTALL_BY_DEFAULT
+	LAF json_unescape_str STR_VAR json = ~\"\\ho \\ho \\ho\"~ RET res END
+	OUTER_TEXT_SPRINT expect ~"\ho \ho \ho"~
+	LAM should_equal
+	
+	
+	
+BEGIN ~json_boolean should produce valid json boolean values~
+INSTALL_BY_DEFAULT
+	LAF json_boolean INT_VAR boolean = 0 RET res END
+	OUTER_TEXT_SPRINT expect ~false~
+	LAM should_equal
+	LAF json_boolean INT_VAR boolean = 1 RET res END
+	OUTER_TEXT_SPRINT expect ~true~
+	LAM should_equal
+	LAF json_boolean INT_VAR boolean = 42 RET res END
+	LAM should_equal
+
+	
+BEGIN ~json_number should produce valid json numeric values~
+INSTALL_BY_DEFAULT
+	LAF json_number INT_VAR number = 0 RET res END
+	OUTER_TEXT_SPRINT expect ~0~
+	LAM should_equal
+	LAF json_number INT_VAR number = 42 RET res END
+	OUTER_TEXT_SPRINT expect ~42~
+	LAM should_equal
+	LAF json_number INT_VAR number = 0 - 666 RET res END
+	OUTER_TEXT_SPRINT expect ~-666~
+	LAM should_equal
+
+	
+BEGIN ~json_string should produce valid json string values~
+INSTALL_BY_DEFAULT
+	LAF json_string STR_VAR string = ~~ RET res END
+	OUTER_TEXT_SPRINT expect ~""~
+	LAM should_equal
+	LAF json_string STR_VAR string = ~\"~ RET res END
+	OUTER_TEXT_SPRINT expect ~"\\\""~
+	LAM should_equal
+
+	
+BEGIN ~json_array should produce valid json array values~	
+INSTALL_BY_DEFAULT
+	ACTION_DEFINE_ARRAY empty BEGIN END
+	LAF json_array STR_VAR arrayvar = ~empty~ RET res END
+	OUTER_TEXT_SPRINT expect ~[]~
+	LAM should_equal
+	ACTION_DEFINE_ARRAY array BEGIN ~1~ ~"foobar"~  ~true~ END
+	LAF json_array STR_VAR arrayvar = ~array~ RET res END
+	OUTER_TEXT_SPRINT expect ~[1, "foobar", true]~
+	LAM should_equal
+
+
+BEGIN ~array_to_json should produce valid json array values~	
+INSTALL_BY_DEFAULT
+	ACTION_DEFINE_ARRAY empty BEGIN END
+	LAF array_to_json STR_VAR arrayvar = ~empty~ RET res END
+	OUTER_TEXT_SPRINT expect ~[]~
+	LAM should_equal
+	ACTION_DEFINE_ARRAY array BEGIN 1  ~2~ ~foobar~ ~\~ ~"~ END
+	LAF array_to_json STR_VAR arrayvar = ~array~ RET res END
+	OUTER_TEXT_SPRINT expect ~[1, 2, "foobar", "\\", "\""]~
+	LAM should_equal
+
+
+BEGIN ~json_object should produce valid json object values~
+INSTALL_BY_DEFAULT
+	ACTION_DEFINE_ASSOCIATIVE_ARRAY empty BEGIN END
+	LAF json_object STR_VAR dictvar = ~empty~ RET res END
+	OUTER_TEXT_SPRINT expect ~{}~
+	LAM should_equal
+	ACTION_DEFINE_ASSOCIATIVE_ARRAY object BEGIN 
+		~int~ => ~1~ ~bool~ => ~true~ ~string~ => ~"foobar"~ ~array~ => ~[1, 2, 3]~ ~obj~ => ~{ "property": "value" }~ 
+	END
+	LAF json_object STR_VAR dictvar = ~object~ RET res END
+	OUTER_TEXT_SPRINT expect 
+		~{"int": 1, "bool": true, "string": "foobar", "array": [1, 2, 3], "obj": { "property": "value" }}~
+	 LAM should_equal
+
+
+BEGIN ~dict_to_json should produce valid json object values~
+INSTALL_BY_DEFAULT
+	ACTION_DEFINE_ASSOCIATIVE_ARRAY empty BEGIN END
+	LAF dict_to_json STR_VAR dictvar = ~empty~ RET res END
+	OUTER_TEXT_SPRINT expect ~{}~
+	LAM should_equal
+	ACTION_DEFINE_ASSOCIATIVE_ARRAY object BEGIN 
+		~int~ => ~1~ ~string~ => ~foobar~ ~quote~ => ~"~ ~escape~ => ~\~ 
+	END
+	LAF dict_to_json STR_VAR dictvar = ~object~ RET res END
+	OUTER_TEXT_SPRINT expect 
+		~{"int": 1, "string": "foobar", "quote": "\"", "escape": "\\"}~
+	 LAM should_equal	 
+
+	 
+BEGIN ~JSON_STRING_RX should match valid Json strings~
+INSTALL_BY_DEFAULT
+	LAF must_match STR_VAR str = ~""~ regexp = EVALUATE_BUFFER ~%JSON_STRING_RX%~ END
+	LAF must_match STR_VAR str = ~"\""~ regexp = EVALUATE_BUFFER ~%JSON_STRING_RX%~ END
+	LAF must_match STR_VAR str = ~" \""~ regexp = EVALUATE_BUFFER ~%JSON_STRING_RX%~ END
+	LAF must_match STR_VAR str = ~"\\"~ regexp = EVALUATE_BUFFER ~%JSON_STRING_RX%~ END
+	LAF must_match STR_VAR str = ~" \\\\"~ regexp = EVALUATE_BUFFER ~%JSON_STRING_RX%~ END
+
+	
+BEGIN ~is_json_boolean should recognize boolean values~
+INSTALL_BY_DEFAULT
+	OUTER_SET expect = 1
+	LAF is_json_boolean STR_VAR json = ~true~ RET res = is_boolean END
+	LAM should_equal
+	LAF is_json_boolean STR_VAR json = ~ true ~ RET res = is_boolean END
+	LAM should_equal
+	LAF is_json_boolean STR_VAR json = ~ false ~ RET res = is_boolean END
+	LAM should_equal
+	OUTER_SET expect = 0
+	LAF is_json_boolean STR_VAR json = ~"true"~ RET res = is_boolean END
+	LAM should_equal
+	LAF is_json_boolean STR_VAR json = ~0~ RET res = is_boolean END
+	LAM should_equal
+	LAF is_json_boolean STR_VAR json = ~true false~ RET res = is_boolean END
+	LAM should_equal
+
+	
+BEGIN ~is_json_int should recognize integer values~
+INSTALL_BY_DEFAULT
+	OUTER_SET expect = 1
+	LAF is_json_int STR_VAR json = ~0~ RET res = is_int END
+	LAM should_equal
+	LAF is_json_int STR_VAR json = ~ 42 ~ RET res = is_int END
+	LAM should_equal
+	LAF is_json_int STR_VAR json = ~ -666~ RET res = is_int END
+	LAM should_equal
+	OUTER_SET expect = 0
+	LAF is_json_int STR_VAR json = ~true~ RET res = is_int END
+	LAM should_equal
+	LAF is_json_int STR_VAR json = ~"42"~ RET res = is_int END
+	LAM should_equal
+	LAF is_json_int STR_VAR json = ~42 69~ RET res = is_int END
+	LAM should_equal
+	
+BEGIN ~is_json_string should recognize string values~
+	OUTER_SET expect = 1
+	LAF is_json_string STR_VAR json = ~""~ RET res = is_string END
+	LAM should_equal
+	LAF is_json_string STR_VAR json = ~ " "		~ RET res = is_string END
+	LAM should_equal 
+	LAF is_json_string STR_VAR json = ~
+		"
+		"~ 
+		RET res = is_string END
+	LAM should_equal
+	LAF is_json_string STR_VAR json = ~"\\"~ RET res = is_string END
+	LAM should_equal 
+	LAF is_json_string STR_VAR json = ~"\""~ RET res = is_string END
+	LAM should_equal
+	LAF is_json_string STR_VAR json = ~" \\\\"~ RET res = is_string END
+	LAM should_equal
+	LAF is_json_string STR_VAR json = ~"\\\" \"\\"~ RET res = is_string END
+	LAM should_equal
+	LAF is_json_string STR_VAR json = ~"\\ "~ RET res = is_string END
+	LAM should_equal
+	LAF is_json_string STR_VAR json = ~" \ "~ RET res = is_string END
+	
+	OUTER_SET expect = 0
+	LAF is_json_string STR_VAR json = ~~ RET res = is_string END
+	LAM should_equal
+	LAF is_json_string STR_VAR json = ~ 	~ RET res = is_string END
+	LAM should_equal
+	LAF is_json_string STR_VAR json = ~1~ RET res = is_string END
+	LAM should_equal
+	LAF is_json_string STR_VAR json = ~"\"~ RET res = is_string END
+	LAM should_equal 
+	LAF is_json_string STR_VAR json = ~"~ RET res = is_string END
+	LAM should_equal
+	LAF is_json_string STR_VAR json = ~"""~ RET res = is_string END
+	LAM should_equal
+	LAF is_json_string STR_VAR json = ~x""~ RET res = is_string END
+	LAM should_equal
+	LAF is_json_string STR_VAR json = ~"\\" \\\"~ RET res = is_string END
+	LAM should_equal
+	LAF is_json_string STR_VAR json = ~" \\" ""~ RET res = is_string END
+	LAM should_equal
+	
+	
+BEGIN ~is_json_list should recognize json arrays~
+INSTALL_BY_DEFAULT
+	OUTER_SET expect = 1
+	LAF is_json_list STR_VAR json = ~[]~ RET res = is_list END
+	LAM should_equal
+	LAF is_json_list STR_VAR json = ~[1]~ RET res = is_list END
+	LAM should_equal
+	LAF is_json_list STR_VAR json = ~[
+			1,
+			2,
+			3
+		]~ 
+		RET res = is_list END
+	LAM should_equal
+	LAF is_json_list STR_VAR json = ~ 	[	"string"	] ~ RET res = is_list END
+	LAM should_equal
+	LAF is_json_list STR_VAR json = ~[1,2,"",4]~ RET res = is_list END
+	LAM should_equal
+	LAF is_json_list STR_VAR json = ~["string", 1 ,	{},[1 , 2,3]]~ RET res = is_list END
+	LAM should_equal
+	
+	OUTER_SET expect = 0
+	LAF is_json_list STR_VAR json = ~~ RET res = is_list END
+	LAM should_equal
+	LAF is_json_list STR_VAR json = ~1~ RET res = is_list END
+	LAM should_equal
+	LAF is_json_list STR_VAR json = ~[~ RET res = is_list END
+	LAM should_equal
+	LAF is_json_list STR_VAR json = ~[1, 2, [3, 4]~ RET res = is_list END
+	LAM should_equal
+	LAF is_json_list STR_VAR json = ~[1,2,{,3 , 4]~ RET res = is_list END
+	LAM should_equal
+	LAF is_json_list STR_VAR json = ~[" ]"~ RET res = is_list END
+	LAM should_equal
+	LAF is_json_list STR_VAR json = ~[1 2]~ RET res = is_list END
+	LAM should_equal
+	
+
+BEGIN ~is_json_object should recognize json objects~
+INSTALL_BY_DEFAULT
+	OUTER_SET expect = 1
+	LAF is_json_object STR_VAR json = ~{}~ RET res = is_object END
+	LAM should_equal
+	LAF is_json_object STR_VAR json = ~{"property":"value"}~ RET res = is_object END
+	LAM should_equal
+	LAF is_json_object STR_VAR json = ~ { "property" : true } ~ RET res = is_object END
+	LAM should_equal
+	LAF is_json_object STR_VAR json = 
+		~{
+			"property": "value"
+		}~ 
+		RET res = is_object END
+	LAM should_equal
+	LAF is_json_object STR_VAR json = ~{ "field1" : 1, "field2": 2	,	"field3" :3}~ RET res = is_object END
+	LAM should_equal
+	LAF is_json_object 
+		STR_VAR json = ~{ "child" : { "grandchild": { "2": 2 }, "1": 1, "a" : [1, 2], "bool": true }}~ RET res = is_object END
+	LAM should_equal
+	LAF is_json_object STR_VAR json = ~{ "}": "{" }~ RET res = is_object END
+	LAM should_equal
+	
+	OUTER_SET expect = 0
+	LAF is_json_object STR_VAR json = ~	 ~ RET res = is_object END
+	LAM should_equal
+	LAF is_json_object STR_VAR json = ~{~ RET res = is_object END
+	LAM should_equal
+	LAF is_json_object STR_VAR json = ~{"}"~ RET res = is_object END
+	LAM should_equal
+	LAF is_json_object STR_VAR json = ~{"{}" : { "x" :"}" }~ RET res = is_object END
+	LAM should_equal
+	LAF is_json_object STR_VAR json = ~{}{}~ RET res = is_object END
+	LAM should_equal
+
+
+BEGIN ~read_json_file should read and validate json from a file~
+INSTALL_BY_DEFAULT
+	<<<<<<<< .../%MOD_FOLDER%-inlined/object.json
+{	
+	"array": [1, 2, true, "string", [42], [], {}, { "meaning of life": 42 }],
+	"object": { 
+		"foo": "bar"
+	},
+	"happy": true
+	"number of the beast": 666
+}
+>>>>>>>>
+	LAF read_json_file STR_VAR file = EVALUATE_BUFFER ~.../%MOD_FOLDER%-inlined/object.json~ RET json END
+	LOG ~Read json:
+%json%~	
+	LAF is_valid_json STR_VAR json = EVALUATE_BUFFER ~%json%~ RET res = is_json END	
+	OUTER_SET expect = 1
+	LAM should_equal
+	
+	DELETE ~.../%MOD_FOLDER%-inlined/.*\.json~
+	
+	
+	
+	
+	
