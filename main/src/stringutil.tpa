@@ -10,8 +10,7 @@ OUTER_TEXT_SPRINT STRINGUTIL ~STRINGUTIL~
 
 
 /** Space, tab and new line with an optional carriage return character before it if built on a windows system. */
-OUTER_TEXT_SPRINT WHITESPACE_CHARS ~ 	
-~
+OUTER_TEXT_SPRINT WHITESPACE_CHARS ~ %WNL%%TAB%~
 /** Regexp for a single ASCII white space character. */
 OUTER_TEXT_SPRINT WHITESPACE_RX ~\([%WHITESPACE_CHARS%]*\)~
 /** Regexp for a character which is not ASCII white space. */
@@ -62,6 +61,43 @@ DEFINE_PATCH_FUNCTION regexp_escape
 
 
 
+DEFINE_PATCH_FUNCTION append_string
+	INT_VAR 
+		newline = 0
+		fullline = 0
+	STR_VAR 
+		string = ~~
+	RET
+		srclength
+	BEGIN
+		SET length = STRING_LENGTH ~%string%~
+		SET srclength = BUFFER_LENGTH
+		
+		PATCH_IF newline AND srclength THEN BEGIN
+			READ_ASCII (srclength - 1) last (1)
+			PATCH_IF NOT ~%last%~ STR_EQ ~%LNL%~ THEN BEGIN
+				INSERT_BYTES srclength 2
+				WRITE_ASCIIE srclength ~%WNL%~
+				SET srclength += 2
+			END
+		END
+		PATCH_IF length THEN BEGIN			
+			INSERT_BYTES srclength length
+			WRITE_ASCIIE srclength length
+			SET srclength += length		
+		END 
+		PATCH_IF fullline THEN BEGIN
+			INSERT_BYTES srclength 2
+			WRITE_ASCIIE srclength ~%WNL%~
+			SET srclength += 2
+		END		
+	END
+	
+	
+	
+	
+	
+	
 /** Concatenates elements of an array into a single string in a more efficient manner
   * than recursive 'TEXT_SPRINT'. Optional prefix and suffix can be provided for
   * wrapping around the elements, as well an optional separator inserted between
@@ -240,7 +276,8 @@ DEFINE_ACTION_FUNCTION split_string
 			END
 			
 		END ELSE ACTION_IF NOT ~%regexp%~ STR_EQ ~~ THEN BEGIN
-			OUTER_PATCH ~%string%~ BEGIN
+			//match the regexp repeatedly against the string and write down the length of each match
+			OUTER_PATCH ~%string%~ BEGIN 
 				SET i = 0
 				REPLACE_EVALUATE CASE_SENSITIVE ~%regexp%~ BEGIN
 					SET $skip(~%i%~) = STRING_LENGTH ~%MATCH0%~
@@ -364,149 +401,183 @@ DEFINE_PATCH_FUNCTION split_string
 
 
 
-
-/** Calculates the length of the longest prefix of the given string in which all characters match
-  * a given regular expression.
+/** Calculates the length of the longest segment of the patched buffer which starts at the given offset
+  * and in which all characters match the given regexp (or character list).
+  * If neither %chars% nor %char_rx% argument is specified, the length of the longest whitespace segment
+  * is calculated.
   */
-DEFINE_ACTION_FUNCTION string_prefix_length
-	STR_VAR 
-		/** Input string. */
-		string = ~~
-		/** Regular expression against each all characters read from ~%string%~ are tested. */
+DEFINE_PATCH_FUNCTION buffer_segment_length
+	INT_VAR 
+		/** Offset in the buffer marking the start of the calculated segment. */
+		offset = 0 
+		/** If non-zero, reading happens in the reverse direction:
+		    the calculated segment must preceed %offset%, rather than follow it. */
+		backwards = 0
+	STR_VAR
+		/** A string treated as a list of individual characters allowed in the segment. */
+		chars = ~~
+		/** Regular expression which all characters in the segment must match (if specified). */
 		char_rx = ~~
-	RET	
-		/** Length of the longest prefix of %string% in which all characters match %char_rx%. */ 
+	RET
+		/** Length of the longest segment starting with %offset% in which all characters 
+		    match %chars%/%char_rx%. */ 
 		length
-		/** Length of the input string, returned here simply for convenience, as the caller will
+		/** Length of the input buffer, returned here simply for convenience, as the caller will
 		  * almost always want to compare the prefix length with the total length of the string. */
 		srclength
-		/** First character in %string% which does not match %char_rx% (at offset %length%).
-		  * if %length% == %srclength% then next == ~~. */
+		/** First character in the buffer after offset which does not match %char_rx%/%chars%
+		  * (at offset offset + %length%). If %length% == %srclength% then next == ~~. */
 		next
 	BEGIN
-		OUTER_SET srclength = STRING_LENGTH ~%string%~
-		OUTER_TEXT_SPRINT next ~~		
-		ACTION_IF srclength THEN BEGIN
-			LAF SUBSTRING 
-				INT_VAR start = 0 length = 1 
-				STR_VAR string = EVALUATE_BUFFER ~%string%~ 
-				RET next = substring END
-			OUTER_SET i = 0
-			
-			OUTER_WHILE i < srclength - 1 AND NOT ~%next%~ STRING_MATCHES_REGEXP ~^%char_rx%$~ BEGIN
-				OUTER_SET i += 1
-				LAF SUBSTRING 
-					INT_VAR start = i length = 1 
-					STR_VAR string = EVALUATE_BUFFER ~%string%~ 
-					RET next = substring END
+		PATCH_IF offset < 0 THEN BEGIN
+			SET offset = cursor
+		END
+		
+		PATCH_IF ~%chars%~ STR_EQ ~~ AND ~%char_rx%~ STR_EQ ~~ THEN BEGIN
+			LPF buffer_segment_length
+				INT_VAR offset = offset
+				STR_VAR chars = EVALUATE_BUFFER ~%WHITESPACE_CHARS%~
+				RET length srclength next
 			END
-			ACTION_IF NOT ~%next%~ STRING_MATCHES_REGEXP ~^%char_rx%$~ THEN BEGIN
-				OUTER_SET i += 1
-				OUTER_TEXT_SPRINT next ~~ 
-			END
-			OUTER_SET length = i
 		END ELSE BEGIN
-			OUTER_SET length = 0
+			SET srclength = BUFFER_LENGTH
+			TEXT_SPRINT next ~~
+			SET continue = 1
+			SET i = offset
+			PATCH_IF backwards THEN BEGIN
+				PATCH_IF NOT ~%chars%~ STR_EQ ~~ THEN BEGIN 
+					WHILE i > 0 AND continue BEGIN
+						SET i -= 1
+						READ_ASCII i next (1)
+						SET continue = INDEX(CASE_SENSITIVE EXACT_MATCH ~%next%~ ~%chars%~) >= 0
+					END
+				END ELSE PATCH_IF NOT ~%char_rx%~ STR_EQ ~~ THEN BEGIN
+					WHILE i > 0 AND continue BEGIN
+						SET i -= 1
+						READ_ASCII i next (1)
+						SET continue = NOT ~%next%~ STRING_CONTAINS_REGEXP ~%char_rx%~
+					END						
+				END 
+				PATCH_IF continue THEN BEGIN
+					SET length = offset
+				END ELSE BEGIN	
+					SET length = offset - i - 1
+				END
+			END ELSE BEGIN
+				PATCH_IF NOT ~%chars%~ STR_EQ ~~ THEN BEGIN 
+					WHILE i < srclength AND continue BEGIN
+						READ_ASCII i next (1)
+						SET continue = INDEX(CASE_SENSITIVE EXACT_MATCH ~%next%~ ~%chars%~) >= 0
+						SET i += 1
+					END
+				END ELSE PATCH_IF NOT ~%char_rx%~ STR_EQ ~~ THEN BEGIN
+					WHILE i < srclength AND continue BEGIN
+						READ_ASCII i next (1)
+						SET continue = NOT ~%next%~ STRING_CONTAINS_REGEXP ~%char_rx%~
+						SET i += 1
+					END						
+				END
+				PATCH_IF continue THEN BEGIN
+					SET length = srclength - offset
+				END ELSE BEGIN	
+					SET length = i - 1 - offset
+				END
+			END
 		END
 	END
 	
-
-
-/** Calculates the length of the longest prefix of the given string in which all characters match
-  * a given regular expression.
-  */
-DEFINE_PATCH_FUNCTION string_prefix_length
-	STR_VAR 
-		/** Input string. */
+	
+	
+DEFINE_ACTION_FUNCTION string_segment_length
+	INT_VAR 
+		offset = 0
+		backwards = 0
+	STR_VAR
 		string = ~~
-		/** Regular expression against each all characters read from ~%string%~ are tested. */
+		chars = ~~
 		char_rx = ~~
-	RET	
-		/** Length of the longest prefix of %string% in which all characters match %char_rx%. */ 
+	RET
 		length
-		/** Length of the input string, returned here simply for convenience, as the caller will
-		  * almost always want to compare the prefix length with the total length of the string. */
 		srclength
-		/** First character in %string% which does not match %char_rx% (at offset %length%).
-		  * if %length% == %srclength% then next == ~~. */
 		next
 	BEGIN
-		INNER_ACTION BEGIN
-			LAF string_prefix_length STR_VAR string = EVALUATE_BUFFER ~%string%~ RET res END
+		OUTER_PATCH ~%string%~ BEGIN
+			LPF buffer_segment_length 
+				INT_VAR offset = offset backwards = backwards
+				STR_VAR chars = EVALUATE_BUFFER ~%chars%~ char_rx = EVALUATE_BUFFER ~%char_rx%~
+				RET length srclength next
+			END
 		END
 	END
+	
+	
 
-
-
-/** Calculates the length of the longest suffix of a given string in which all characters match the given
-  * regular expression.
-  */
-DEFINE_ACTION_FUNCTION string_suffix_length
+DEFINE_PATCH_FUNCTION string_segment_length
+	INT_VAR 
+		offset = 0
+		backwards = 0
 	STR_VAR
-		/** Input string. */
 		string = ~~
-		/** Regular expression against which all individual characters from %string% are matched. */
+		chars = ~~
 		char_rx = ~~
-	RET 
-		/** Length of the longest suffix of %string% in which all characters match %char_rx%. */
+	RET
 		length
-		/** Total length of the input string returned for convenience, as the caller will most likely
-		  * want to compare it with the returned prefix length. */
 		srclength
-		/** Last character in %string% which does not match %char_rx% (at offset %srclength% - %length% -1).
-		  * If %length% == %srclength% then prev == ~~. */
-		prev
+		next
 	BEGIN
-		OUTER_SET srclength = STRING_LENGTH ~%string%~
-		OUTER_SET length = 0
-		OUTER_TEXT_SPRINT prev ~~
-		
-		ACTION_IF srclength THEN BEGIN
-			LAF SUBSTRING 
-				INT_VAR start = srclength-1 length = 1 
-				STR_VAR string = EVALUATE_BUFFER ~%string%~ 
-				RET prev = substring END
-		
-			OUTER_SET i = srclength - 1
-			OUTER_WHILE i > 0 AND NOT ~%prev%~ STRING_MATCHES_REGEXP ~^%char_rx%$~ BEGIN
-				OUTER_SET i -= 1
-				LAF SUBSTRING 
-					INT_VAR start = i length = 1 
-					STR_VAR string = EVALUATE_BUFFER ~%string%~ 
-					RET prev = substring END
-
+		INNER_PATCH ~%string%~ BEGIN
+			LPF buffer_segment_length 
+				INT_VAR offset = offset backwards = backwards
+				STR_VAR chars = EVALUATE_BUFFER ~%chars%~ char_rx = EVALUATE_BUFFER ~%char_rx%~
+				RET length srclength next
 			END
-			ACTION_IF NOT ~%prev%~ STRING_MATCHES_REGEXP ~^%char_rx%$~ THEN BEGIN			
-				OUTER_SET i -= 1
-				OUTER_TEXT_SPRINT prev ~~
-			END
-			OUTER_SET length = srclength - i + 1
-		END 
+		END
 	END
 	
 	
 	
-/** Calculates the length of the longest suffix of a given string in which all characters match the given
-  * regular expression.
-  */
-DEFINE_PATCH_FUNCTION string_suffix_length
-	STR_VAR
-		/** Input string. */
-		string = ~~
-		/** Regular expression against which all individual characters from %string% are matched. */
-		char_rx = ~~
-	RET 
-		/** Length of the longest suffix of %string% in which all characters match %char_rx%. */
-		length
-		/** Total length of the input string returned for convenience, as the caller will most likely
-		  * want to compare it with the returned prefix length. */
-		srclength
-		/** Last character in %string% which does not match %char_rx% (at offset %srclength% - %length% -1).
-		  * If %length% == %srclength% then prev == ~~. */
-		prev
+DEFINE_PATCH_FUNCTION skip_buffer_whitespace 
+	INT_VAR offset = 0
+	RET offset srclength next
 	BEGIN
-		INNER_ACTION BEGIN
-			LAF string_suffix_length STR_VAR string = EVALUATE_BUFFER ~%string%~ RET res END
+		PATCH_IF offset < 0 THEN BEGIN
+			SET offset = cursor
+		END
+		LPF buffer_segment_length 
+			INT_VAR offset = offset 
+			STR_VAR chars = EVALUATE_BUFFER ~%WHITESPACE_CHARS%~
+			RET length srclength next END
+		SET offset += length
+	END
+
+
+
+DEFINE_PATCH_FUNCTION next_buffer_token
+	INT_VAR offset = 0
+	STR_VAR non_token_chars = ~~
+	RET offset srclength token
+	BEGIN
+		PATCH_IF offset < 0 THEN BEGIN
+			SET offset = cursor
+		END
+		PATCH_IF ~%non_token_chars%~ STR_EQ ~~ THEN BEGIN
+			TEXT_SPRINT non_token_chars ~%WHITESPACE_CHARS%,;~
+		END
+	
+		LPF buffer_segment_length
+			INT_VAR offset = offset
+			STR_VAR chars = EVALUATE_BUFFER ~%WHITESPACE_CHARS%~
+			RET length srclength next END
+		TEXT_SPRINT token ~~
+		PATCH_IF offset + length < srclength THEN BEGIN
+			LPF buffer_segment_length
+				INT_VAR offset = offset + length
+				STR_VAR char_rx = EVALUATE_BUFFER ~[^%non_token_chars%]~
+				RET token_length = length END
+			PATCH_IF token_length > 0 THEN BEGIN
+				READ_ASCII (offset + length) token (token_length) 
+				SET offset += length + token_length
+			END
 		END
 	END
 
