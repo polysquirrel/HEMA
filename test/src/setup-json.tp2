@@ -42,13 +42,14 @@ END
 BEGIN ~concat should concatenate strings in an array~
 INSTALL_BY_DEFAULT
 	ACTION_DEFINE_ARRAY strings BEGIN ~a~ ~b~ ~c~ END
-	LAF concat STR_VAR arrayvar = ~strings~ RET res END
+	LAF concat STR_VAR array = ~strings~ RET res END
 	OUTER_TEXT_SPRINT expect ~abc~
 	LAM should_equal
 	
-	LAF concat INT_VAR size = 1 STR_VAR arrayvar = ~strings~ RET res END
+	LAF concat INT_VAR size = 1 STR_VAR array = ~strings~ RET res END
 	OUTER_TEXT_SPRINT expect ~a~
 	LAM should_equal
+
 
 
 BEGIN ~split_string should split a string around a separator char~
@@ -56,7 +57,7 @@ INSTALL_BY_DEFAULT
 	LAF split_string STR_VAR string = ~a;b;cd;;e;~ separator = ~;~ RET res = size RET_ARRAY chunks = res END
 	OUTER_SET expect = 6
 	LAM should_equal
-	LAF concat STR_VAR arrayvar = ~chunks~ separator = ~,~ RET res END
+	LAF concat STR_VAR array = ~chunks~ separator = ~,~ RET res END
 	OUTER_TEXT_SPRINT expect ~a,b,cd,,e,~
 	LAM should_equal
 	
@@ -66,9 +67,10 @@ INSTALL_BY_DEFAULT
 		RET res = size RET_ARRAY chunks = res END
 	OUTER_SET expect = 4
 	LAM should_equal
-	LAF concat STR_VAR arrayvar = ~chunks~ separator = ~,~ RET res END
+	LAF concat STR_VAR array = ~chunks~ separator = ~,~ RET res END
 	OUTER_TEXT_SPRINT expect ~a,b,cd,e~
 	LAM should_equal
+
 
 
 BEGIN ~split_string should split a string around separator chars~
@@ -76,7 +78,7 @@ INSTALL_BY_DEFAULT
 	LAF split_string STR_VAR string = ~a;b:cd;:e~ separators = ~;:~ RET res = size RET_ARRAY chunks = res END
 	OUTER_SET expect = 5
 	LAM should_equal
-	LAF concat STR_VAR arrayvar = ~chunks~ separator = ~,~ RET res END
+	LAF concat STR_VAR array = ~chunks~ separator = ~,~ RET res END
 	OUTER_TEXT_SPRINT expect ~a,b,cd,,e~
 	LAM should_equal
 	
@@ -86,9 +88,10 @@ INSTALL_BY_DEFAULT
 		RET res = size RET_ARRAY chunks = res END
 	OUTER_SET expect = 4
 	LAM should_equal
-	LAF concat STR_VAR arrayvar = ~chunks~ separator = ~,~ RET res END
+	LAF concat STR_VAR array = ~chunks~ separator = ~,~ RET res END
 	OUTER_TEXT_SPRINT expect ~a,b,cd,e~
 	LAM should_equal
+
 
 
 BEGIN ~split_string should split a string around a regexp~
@@ -98,7 +101,7 @@ INSTALL_BY_DEFAULT
 		RET res = size RET_ARRAY chunks = res END
 	OUTER_SET expect = 6
 	LAM should_equal
-	LAF concat STR_VAR arrayvar = ~chunks~ separator = ~,~ RET res END
+	LAF concat STR_VAR array = ~chunks~ separator = ~,~ RET res END
 	OUTER_TEXT_SPRINT expect ~a,b,cd,,e,~
 	LAM should_equal
 	
@@ -108,7 +111,7 @@ INSTALL_BY_DEFAULT
 		RET res = size RET_ARRAY chunks = res END
 	OUTER_SET expect = 4
 	LAM should_equal
-	LAF concat STR_VAR arrayvar = ~chunks~ separator = ~,~ RET res END
+	LAF concat STR_VAR array = ~chunks~ separator = ~,~ RET res END
 	OUTER_TEXT_SPRINT expect ~a,b,cd,e~
 	LAM should_equal
 	
@@ -119,6 +122,8 @@ INSTALL_BY_DEFAULT
 	LAF regexp_escape STR_VAR str = "^\(a1\|a2\)*.?[a-z]$" RET res = regexp END
 	OUTER_TEXT_SPRINT expect "\^\\(a1\\|a2\\)\*\.\?\[a-z\]\$"
 	LAM should_equal
+
+
 
 
 	
@@ -134,6 +139,7 @@ INSTALL_BY_DEFAULT
 	LAF json_boolean INT_VAR boolean = 42 RET res END
 	LAM should_equal
 
+
 	
 BEGIN ~json_number should produce valid json numeric values~
 INSTALL_BY_DEFAULT
@@ -147,6 +153,7 @@ INSTALL_BY_DEFAULT
 	OUTER_TEXT_SPRINT expect ~-666~
 	LAM should_equal
 
+
 	
 BEGIN ~json_string should produce valid json string values~
 INSTALL_BY_DEFAULT
@@ -156,6 +163,7 @@ INSTALL_BY_DEFAULT
 	LAF json_string STR_VAR string = ~\"~ RET res END
 	OUTER_TEXT_SPRINT expect ~"\\\""~
 	LAM should_equal
+
 
 	
 BEGIN ~json_array should produce valid json arrays from json elements~	
@@ -168,6 +176,7 @@ INSTALL_BY_DEFAULT
 	LAF json_array STR_VAR rawarray = ~array~ RET res END
 	OUTER_TEXT_SPRINT expect ~[1, "foobar", true]~
 	LAM should_equal
+
 
 
 BEGIN ~json_array should produce valid json arrays from weidu values~	
@@ -187,6 +196,7 @@ INSTALL_BY_DEFAULT
 	LAM should_equal
 
 
+
 BEGIN ~json_object should produce valid json objects from json values~
 INSTALL_BY_DEFAULT
 	ACTION_DEFINE_ASSOCIATIVE_ARRAY empty BEGIN END
@@ -200,6 +210,7 @@ INSTALL_BY_DEFAULT
 	OUTER_TEXT_SPRINT expect 
 		~{"int": 1, "bool": true, "string": "foobar", "array": [1, 2, 3], "obj": { "property": "value" }}~
 	 LAM should_equal
+
 
 
 BEGIN ~json_object should produce valid json objects from weidu values~
@@ -216,6 +227,7 @@ INSTALL_BY_DEFAULT
 		~{"int": 1, "string": "foobar", "quote": "\"", "escape": "\\"}~
 	 LAM should_equal	 
 
+
 	 
 BEGIN ~JSON_STRING_RX should match valid Json strings~
 INSTALL_BY_DEFAULT
@@ -224,6 +236,8 @@ INSTALL_BY_DEFAULT
 	LAF must_match STR_VAR str = ~" \""~ regexp = EVAL ~%JSON_STRING_RX%~ END
 	LAF must_match STR_VAR str = ~"\\"~ regexp = EVAL ~%JSON_STRING_RX%~ END
 	LAF must_match STR_VAR str = ~" \\\\"~ regexp = EVAL ~%JSON_STRING_RX%~ END
+
+
 
 
 
@@ -245,6 +259,7 @@ INSTALL_BY_DEFAULT
 	LAF is_json_boolean STR_VAR json = ~true false~ RET res = is_boolean END
 	LAM should_equal
 
+
 	
 BEGIN ~is_json_number should recognize integer values~
 INSTALL_BY_DEFAULT
@@ -262,6 +277,7 @@ INSTALL_BY_DEFAULT
 	LAM should_equal
 	LAF is_json_number STR_VAR json = ~42 69~ RET res = is_int END
 	LAM should_equal
+
 
 	
 BEGIN ~is_json_string should recognize string values~
@@ -308,6 +324,7 @@ INSTALL_BY_DEFAULT
 	LAF is_json_string STR_VAR json = ~" \\" ""~ RET res = is_string END
 	LAM should_equal
 	
+
 	
 BEGIN ~is_json_array should recognize json arrays~
 INSTALL_BY_DEFAULT
@@ -347,6 +364,7 @@ INSTALL_BY_DEFAULT
 	LAM should_equal
 	
 
+
 BEGIN ~is_json_object should recognize json objects~
 INSTALL_BY_DEFAULT
 	OUTER_SET expect = 1
@@ -385,6 +403,8 @@ INSTALL_BY_DEFAULT
 
 
 
+
+
 BEGIN ~json_to_boolean should correctly read (only) boolean values~
 INSTALL_BY_DEFAULT
 	OUTER_SET expect = 1
@@ -415,6 +435,7 @@ INSTALL_BY_DEFAULT
 	WITH DEFAULT END
 	LAM should_equal
 	
+
 	
 BEGIN ~json_to_int should correctly read (only) integer values~
 INSTALL_BY_DEFAULT
@@ -473,6 +494,7 @@ INSTALL_BY_DEFAULT
 	LAM should_equal
 
 
+
 BEGIN ~json_to_string should correctly read and unescape string values~
 INSTALL_BY_DEFAULT
 	OUTER_TEXT_SPRINT expect ~~
@@ -528,7 +550,6 @@ string2"~ RET res END
 		LAF json_to_string STR_VAR json = ~" " "" ~ RET res END
 	WITH DEFAULT END
 	LAM should_equal
-
 
 	
 
@@ -608,6 +629,7 @@ INSTALL_BY_DEFAULT
 		LAF json_array STR_VAR rawarray = ~a~ RET res END
 	WITH DEFAULT END
 	LAM should_equal
+
 
 
 BEGIN ~json_to_array should read json array and store dejsonised values~
@@ -698,6 +720,7 @@ INSTALL_BY_DEFAULT
 	LAM should_equal
 
 
+
 BEGIN ~json_array_at should read the element at the given index of an json array~
 INSTALL_BY_DEFAULT
 	OUTER_TEXT_SPRINT json ~[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]~
@@ -741,7 +764,6 @@ INSTALL_BY_DEFAULT
 		LAF json_array_at INT_VAR idx = 100 STR_VAR json = EVAL ~%json%~ RET res END
 	WITH DEFAULT END
 	LAM should_equal
-
 
 
 
@@ -802,6 +824,7 @@ INSTALL_BY_DEFAULT
 	END	
 
 
+
 BEGIN ~json_field should correctly extract value of a json object field~
 INSTALL_BY_DEFAULT
 	OUTER_TEXT_SPRINT expect "meaning of life, universe and everything"
@@ -817,6 +840,8 @@ INSTALL_BY_DEFAULT
 		LAF json_field STR_VAR json = EVAL ~%json%~ field = ~answer~ RET res END
 	WITH DEFAULT END
 	LAM should_equal
+
+
 		
 
 
@@ -866,6 +891,86 @@ INSTALL_BY_DEFAULT
 			json = ~{"": {"....": "dotdotdotdot"}, ".": {"...": "dotdotdot"}, ".." : {"": {".": "tricky"}}}~
 		RET res END
 	LAM should_equal
+
+
+
+BEGIN ~set_json should set complex json properties~
+INSTALL_BY_DEFAULT
+	OUTER_TEXT_SPRINT expect ~"42"~
+	LAF set_json 
+		STR_VAR json = ~"vanishing point"~ property = ~~ value = EVAL ~%expect%~
+		RET res END
+	LAM should_equal
+	
+	OUTER_TEXT_SPRINT json ~ { "id": 0, "name" : "44" }~
+	OUTER_TEXT_SPRINT expect ~{"id": 0, "name": "42"}~
+	LAF set_json STR_VAR property = ~name~ json = EVAL ~%json%~ value = ~"42"~ RET res END
+	LAM should_equal
+
+	OUTER_PATCH_SAVE expect ~%res%~ BEGIN
+		REPLACE_TEXTUALLY CASE_SENSITIVE EXACT_MATCH ~}~ ~, "luck": 1}~
+	END
+	LAF set_json STR_VAR property = ~luck~ json = EVAL ~%res%~ value = ~1~ RET res END
+	LAM should_equal
+	
+	OUTER_TEXT_SPRINT json ~{ "granddad": { "dad": { "child": "nested"}}}~
+	OUTER_PATCH_SAVE expect ~%json%~ BEGIN
+		REPLACE_TEXTUALLY EXACT_MATCH ~nested~ ~egg~
+		REPLACE_TEXTUALLY EXACT_MATCH ~{ ~ ~{~
+	END
+	LAF set_json 
+		STR_VAR property = ~granddad.dad.child~ json = EVAL ~%json%~ value = ~"egg"~
+		RET res END
+	LAM should_equal
+
+	OUTER_TEXT_SPRINT json ~{"indexed": ["indexed"]}~
+	OUTER_TEXT_SPRINT expect ~{"indexed": [42]}~
+	LAF set_json STR_VAR property = ~indexed[0]~ json = EVAL ~%json%~ value = ~42~ RET res END
+	LAM should_equal
+	
+	OUTER_TEXT_SPRINT json ~["01", [ "10", "11" ]]~
+	OUTER_TEXT_SPRINT expect ~["01", ["10", { "new": "11" }]]~
+	LAF set_json 
+		STR_VAR property = ~[1][1]~ json = EVAL ~%json%~ value = ~{ "new": "11" }~ 
+		RET res END
+	LAM should_equal
+	
+	OUTER_TEXT_SPRINT json ~[ {"a": [ {"b": {"c": "complex"} } ] } ]~
+	OUTER_PATCH_SAVE expect ~%json%~ BEGIN
+		REPLACE_TEXTUALLY EXACT_MATCH ~"complex"~ ~"success"~
+		REPLACE_TEXTUALLY EXACT_MATCH ~[ ~ ~[~
+		REPLACE_TEXTUALLY EVALUATE_REGEXP ~\([]}]\) ~ ~\1~
+	END
+	LAF set_json 
+		STR_VAR property = ~[0].a[0].b.c~ json = EVAL ~%json%~ value = ~"success"~
+		RET res END
+	LAM should_equal
+	
+	OUTER_TEXT_SPRINT json ~{"a": {"b": {"c": {"d": "overriden"}}, "b.c": {}}}~
+	OUTER_PATCH_SAVE expect ~%json%~ BEGIN
+		REPLACE_TEXTUALLY EXACT_MATCH ~{}~ ~{"d": "override"}~
+	END
+	LAF set_json 
+		STR_VAR property = ~a.b.c.d~ json = EVAL ~%json%~ value = ~"override"~
+		RET res END
+	LAM should_equal
+	
+	OUTER_TEXT_SPRINT json ~{"": {"....": "dotdotdotdot"}, ".": {"...": "dotdotdot"}, "..": {"": {".": "tricky"}}}~
+	OUTER_PATCH_SAVE expect ~%json%~ BEGIN
+		REPLACE_TEXTUALLY EXACT_MATCH ~"tricky"~ ~"this"~
+	END
+	LAF set_json 
+		STR_VAR property = ~.....~ json = EVAL ~%json%~ value = ~"this"~
+		RET res END
+	LAM should_equal
+
+	OUTER_TEXT_SPRINT json ~{ "name": "Imoen", "class": "Adventurer"}~
+	OUTER_TEXT_SPRINT expect ~{"name": "Imoen", "class": "Adventurer", "Armour.Piercing": 4}~
+	LAF set_json
+		STR_VAR property = ~Armour.Piercing~ json = EVAL ~%json%~ value = ~4~ 
+		RET res END
+	LAM should_equal
+		
 	
 	
 
@@ -901,6 +1006,7 @@ INSTALL_BY_DEFAULT
 	LAM should_equal
 
 
+
 BEGIN ~update_json_array should update an array element~
 INSTALL_BY_DEFAULT
 	LAF update_json_array INT_VAR at = 0 STR_VAR json = ~[1, 2, 3, 4]~ set = ~"cat"~ RET res END
@@ -916,6 +1022,7 @@ INSTALL_BY_DEFAULT
 	LAM should_equal
 
 
+
 BEGIN ~update_json_array should insert an element into an array~
 INSTALL_BY_DEFAULT
 	LAF update_json_array INT_VAR at = 0 STR_VAR json = ~[1, 2, 3]~ insert = ~"cat"~ RET res END
@@ -929,6 +1036,7 @@ INSTALL_BY_DEFAULT
 	LAF update_json_array INT_VAR at = 3 STR_VAR json = ~[1, 2, 3]~ insert = ~"cat"~ RET res END
 	OUTER_TEXT_SPRINT expect ~[1, 2, 3, "cat"]~
 	LAM should_equal
+
 
 
 BEGIN ~update_json_array should insert an array into another array~
@@ -967,6 +1075,7 @@ INSTALL_BY_DEFAULT
 	LAM should_equal
 
 
+
 BEGIN ~update_json_array should perform complex modifications on json arrays~
 INSTALL_BY_DEFAULT
 	LAF update_json_array
@@ -975,6 +1084,7 @@ INSTALL_BY_DEFAULT
 		RET res END
 	OUTER_TEXT_SPRINT expect ~[1, 42, "cat", "dog", "apple"]~
 	LAM should_equal
+
 
 
 BEGIN ~update_json_object should modify json objects~
@@ -1020,6 +1130,8 @@ INSTALL_BY_DEFAULT
 
 
 
+
+
 BEGIN ~read_json_file should read and validate json from a file~
 INSTALL_BY_DEFAULT
 	OUTER_TEXT_SPRINT expect ~{	
@@ -1027,7 +1139,7 @@ INSTALL_BY_DEFAULT
 	"object": { 
 		"foo": "bar"
 	},
-	"happy": true
+	"happy": true,
 	"number of the beast": 666
 }
 ~
@@ -1038,17 +1150,20 @@ INSTALL_BY_DEFAULT
 	"object": { 
 		"foo": "bar"
 	},
-	"happy": true
+	"happy": true,
 	"number of the beast": 666
 }
 >>>>>>>>
-	LAF read_json_file STR_VAR file = EVAL ~.../%MOD_FOLDER%-inlined/object.json~ RET res = json END
+	LAF read_json_file 
+		STR_VAR file = EVAL ~.../%MOD_FOLDER%-inlined/object.json~ 
+		RET res = json END
 	LAM should_equal
 	LAF is_valid_json STR_VAR json = EVAL ~%res%~ RET res = is_json END	
 	OUTER_SET expect = 1
 	LAM should_equal
 	
 	DELETE ~.../%MOD_FOLDER%-inlined/.*\.json~
+
 
 
 BEGIN ~read_2da_as_json should read a 2da file and format it as json~
@@ -1071,6 +1186,8 @@ INSTALL_BY_DEFAULT
 	OUTER_TEXT_SPRINT baeloth	~{"name": "Baeloth", "class": "sorcerer", "level": 4}~
 	OUTER_TEXT_SPRINT expect ~[%imoen%, %viconia%, %baeloth%]~	
 	LAM should_equal
+
+
 	
 	
 	

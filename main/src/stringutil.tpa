@@ -113,7 +113,7 @@ DEFINE_ACTION_FUNCTION concat
 		size = 2147483647
 	STR_VAR 
 		/** Name of the array which values are concatenated together. */
-		arrayvar = ~~
+		array = ~~
 		/** Optional prefix of the returned string (printed before array elements). */
 		prefix = ~~
 		/** Optional suffix of the returned string (printed after all array elements). */
@@ -142,7 +142,7 @@ DEFINE_ACTION_FUNCTION concat
 				SET separator_length = STRING_LENGTH ~%separator%~
 				SET total = STRING_LENGTH ~%prefix%~
 				SET i = 0
-				PHP_EACH ~%arrayvar%~ AS _ => string BEGIN
+				PHP_EACH ~%array%~ AS _ => string BEGIN
 					PATCH_IF i < size THEN BEGIN
 						PATCH_IF i THEN BEGIN
 							INSERT_BYTES total separator_length
@@ -183,7 +183,7 @@ DEFINE_PATCH_FUNCTION concat
 		size = 2147483647
 	STR_VAR 
 		/** Name of the array which values are concatenated together. */
-		arrayvar = ~~
+		array = ~~
 		/** Optional prefix of the returned string (printed before array elements). */
 		prefix = ~~
 		/** Optional suffix of the returned string (printed after all array elements). */
@@ -198,7 +198,7 @@ DEFINE_PATCH_FUNCTION concat
 			LAF concat 
 				INT_VAR size = size 
 				STR_VAR 
-					arrayvar = EVALUATE_BUFFER ~%arrayvar%~ 
+					array = EVALUATE_BUFFER ~%array%~ 
 					prefix = EVALUATE_BUFFER ~%prefix%~
 					suffix = EVALUATE_BUFFER ~%suffix%~
 					separator = EVALUATE_BUFFER ~%separator%~
@@ -426,8 +426,8 @@ DEFINE_PATCH_FUNCTION buffer_segment_length
 		  * almost always want to compare the prefix length with the total length of the string. */
 		srclength
 		/** First character in the buffer after offset which does not match %char_rx%/%chars%
-		  * (at offset offset + %length%). If %length% == %srclength% then next == ~~. */
-		next
+		  * (at offset offset + %length%). If %length% == %srclength% then peek == ~~. */
+		peek
 	BEGIN
 		PATCH_IF offset < 0 THEN BEGIN
 			SET offset = cursor
@@ -437,25 +437,25 @@ DEFINE_PATCH_FUNCTION buffer_segment_length
 			LPF buffer_segment_length
 				INT_VAR offset = offset
 				STR_VAR chars = EVALUATE_BUFFER ~%WHITESPACE_CHARS%~
-				RET length srclength next
+				RET length srclength peek
 			END
 		END ELSE BEGIN
 			SET srclength = BUFFER_LENGTH
-			TEXT_SPRINT next ~~
+			TEXT_SPRINT peek ~~
 			SET continue = 1
 			SET i = offset
 			PATCH_IF backwards THEN BEGIN
 				PATCH_IF NOT ~%chars%~ STR_EQ ~~ THEN BEGIN 
 					WHILE i > 0 AND continue BEGIN
 						SET i -= 1
-						READ_ASCII i next (1)
-						SET continue = INDEX(CASE_SENSITIVE EXACT_MATCH ~%next%~ ~%chars%~) >= 0
+						READ_ASCII i peek (1)
+						SET continue = INDEX(CASE_SENSITIVE EXACT_MATCH ~%peek%~ ~%chars%~) >= 0
 					END
 				END ELSE PATCH_IF NOT ~%char_rx%~ STR_EQ ~~ THEN BEGIN
 					WHILE i > 0 AND continue BEGIN
 						SET i -= 1
-						READ_ASCII i next (1)
-						SET continue = NOT ~%next%~ STRING_CONTAINS_REGEXP ~%char_rx%~
+						READ_ASCII i peek (1)
+						SET continue = NOT ~%peek%~ STRING_CONTAINS_REGEXP ~%char_rx%~
 					END						
 				END 
 				PATCH_IF continue THEN BEGIN
@@ -466,14 +466,14 @@ DEFINE_PATCH_FUNCTION buffer_segment_length
 			END ELSE BEGIN
 				PATCH_IF NOT ~%chars%~ STR_EQ ~~ THEN BEGIN 
 					WHILE i < srclength AND continue BEGIN
-						READ_ASCII i next (1)
-						SET continue = INDEX(CASE_SENSITIVE EXACT_MATCH ~%next%~ ~%chars%~) >= 0
+						READ_ASCII i peek (1)
+						SET continue = INDEX(CASE_SENSITIVE EXACT_MATCH ~%peek%~ ~%chars%~) >= 0
 						SET i += 1
 					END
 				END ELSE PATCH_IF NOT ~%char_rx%~ STR_EQ ~~ THEN BEGIN
 					WHILE i < srclength AND continue BEGIN
-						READ_ASCII i next (1)
-						SET continue = NOT ~%next%~ STRING_CONTAINS_REGEXP ~%char_rx%~
+						READ_ASCII i peek (1)
+						SET continue = NOT ~%peek%~ STRING_CONTAINS_REGEXP ~%char_rx%~
 						SET i += 1
 					END						
 				END
@@ -499,13 +499,13 @@ DEFINE_ACTION_FUNCTION string_segment_length
 	RET
 		length
 		srclength
-		next
+		peek
 	BEGIN
 		OUTER_PATCH ~%string%~ BEGIN
 			LPF buffer_segment_length 
 				INT_VAR offset = offset backwards = backwards
 				STR_VAR chars = EVALUATE_BUFFER ~%chars%~ char_rx = EVALUATE_BUFFER ~%char_rx%~
-				RET length srclength next
+				RET length srclength peek
 			END
 		END
 	END
@@ -523,13 +523,13 @@ DEFINE_PATCH_FUNCTION string_segment_length
 	RET
 		length
 		srclength
-		next
+		peek
 	BEGIN
 		INNER_PATCH ~%string%~ BEGIN
 			LPF buffer_segment_length 
 				INT_VAR offset = offset backwards = backwards
 				STR_VAR chars = EVALUATE_BUFFER ~%chars%~ char_rx = EVALUATE_BUFFER ~%char_rx%~
-				RET length srclength next
+				RET length srclength peek
 			END
 		END
 	END
@@ -538,7 +538,7 @@ DEFINE_PATCH_FUNCTION string_segment_length
 	
 DEFINE_PATCH_FUNCTION skip_buffer_whitespace 
 	INT_VAR offset = 0
-	RET offset srclength next
+	RET offset srclength peek
 	BEGIN
 		PATCH_IF offset < 0 THEN BEGIN
 			SET offset = cursor
@@ -546,7 +546,7 @@ DEFINE_PATCH_FUNCTION skip_buffer_whitespace
 		LPF buffer_segment_length 
 			INT_VAR offset = offset 
 			STR_VAR chars = EVALUATE_BUFFER ~%WHITESPACE_CHARS%~
-			RET length srclength next END
+			RET length srclength peek END
 		SET offset += length
 	END
 
@@ -567,7 +567,7 @@ DEFINE_PATCH_FUNCTION next_buffer_token
 		LPF buffer_segment_length
 			INT_VAR offset = offset
 			STR_VAR chars = EVALUATE_BUFFER ~%WHITESPACE_CHARS%~
-			RET length srclength next END
+			RET length srclength peek END
 		TEXT_SPRINT token ~~
 		PATCH_IF offset + length < srclength THEN BEGIN
 			LPF buffer_segment_length

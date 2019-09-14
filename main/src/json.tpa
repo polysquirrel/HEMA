@@ -31,14 +31,6 @@ OUTER_SET MAX_INT = BIT31 - 1 //2147483647
 
 
 
-DEFINE_PATCH_MACRO expect_valid_json BEGIN //TODO
-	LPF is_valid_json STR_VAR json = EVAL ~%json%~ RET is_json END
-	PATCH_IF NOT is_json THEN BEGIN
-		PATCH_FAIL ~Invalid json: <<%json%>>~
-	END
-END
-
-
 
 /*************************************************************************************
  ********************     String-related util functions           ********************
@@ -123,14 +115,25 @@ DEFINE_ACTION_FUNCTION json_escape_str
  *************************************************************************************/ 
 
 
-
+/** Inserts the given boolean value in the json format (true|false) into the currently patched
+  * buffer at the given offset, pushing back any existing data. The value can be given either
+  * as an integer %boolean% and interpreted as by WeiDU, or as an (unquoted) string %json%: 
+  * 'true' or 'false'. The latter parameter, if not empty, takes precedence.
+  * If the %offset% parameter is not specified or is negative, the value will be appended to the buffer. 
+  * Offset larger than the length of the buffer will result in an error.
+  */
 DEFINE_PATCH_FUNCTION write_json_boolean
 	INT_VAR 
+		/** Offset in the buffer after which the value will be written. */
 		offset = 0 - 1
+		/** Integer value to write as json; 0 results in writing 'false', any other value in 'true' */
 		boolean = 0
 	STR_VAR
+		/** Boolean to write in the string format: either 'true' or 'false'. 
+		  * If empty, the %boolean% parameter will be used instead. */
 		json = ~~
 	RET 
+		/** Offset in the patched buffer immediately after the written value. */
 		offset
 	BEGIN
 		PATCH_IF offset < 0 THEN BEGIN			
@@ -140,7 +143,7 @@ DEFINE_PATCH_FUNCTION write_json_boolean
 			SET boolean = 1
 		END ELSE PATCH_IF ~%json%~ STR_EQ ~false~ THEN BEGIN
 			SET boolean = 0
-		END ELSE BEGIN
+		END ELSE PATCH_IF NOT ~%json%~ STR_EQ ~~ THEN BEGIN
 			PATCH_FAIL ~write_json_boolean: argument json=<<%json%> is not a valid json boolean.~
 		END
 		
@@ -157,32 +160,66 @@ DEFINE_PATCH_FUNCTION write_json_boolean
 
 
 
+/** Inserts the given integer value into the currently patched
+  * buffer at the given offset, pushing back any existing data. The value can be given either
+  * as an integer %number% and interpreted as by WeiDU, or as an (unquoted) string %json%: 
+  * 'true' or 'false'. The latter parameter, if not empty, takes precedence.
+  * If the %offset% parameter is not specified or is negative, the value will be appended to the buffer. 
+  * Offset larger than the length of the buffer will result in an error.
+  */
 DEFINE_PATCH_FUNCTION write_json_number
-	INT_VAR
+	INT_VAR 
+		/** Offset in the buffer after which the value will be written. */
 		offset = 0 - 1
+		/** Integer value to write as json. */
 		number = 0
+	STR_VAR
+		/** Integer to write in a valid json format: decimal, hexadecimal (prefixed with '0x'),
+		  * or octal (prefixed with '0o'). A leading sign (-/+) is allowed. If empty, the %number%
+		  * parameter is used instead. */
+		json = ~~
 	RET 
+		/** Offset in the patched buffer immediately after the written value. */
 		offset
 	BEGIN
 		PATCH_IF offset < 0 THEN BEGIN			
 			SET offset = BUFFER_LENGTH
 		END
-		SET str = ~%number%~
-		SET len = STRING_LENGTH ~%str%~
+		PATCH_IF ~%json%~ STR_EQ ~~ THEN BEGIN
+			SET json = ~%number%~
+		END ELSE BEGIN
+			LPF is_json_number STR_VAR json = EVAL ~%json%~ RET is_number END
+			PATCH_IF NOT is_number THEN BEGIN
+				PATCH_FAIL ~write_json_number: <<%json%>> is not a number.~
+			END
+		END
+			
+		SET len = STRING_LENGTH ~%json%~
 		INSERT_BYTES offset len
-		WRITE_ASCIIE offset ~%str%~ 		
+		WRITE_ASCIIE offset ~%json%~ 		
 		SET offset += len
 	END
 
 
 
+/** Inserts the given string into the currently patched buffer at the given offset, 
+  * pushing back any existing data. The value can be given either as an ordinary string %string%,
+  * or as an already quoted value %json% (surrounded in '"' with any '"' inside escaped with '\').
+  * The latter parameter, if not empty, takes precedence.
+  * If the %offset% parameter is not specified or is negative, the value will be appended to the buffer. 
+  * Offset larger than the length of the buffer will result in an error.
+  */
 DEFINE_PATCH_FUNCTION write_json_string
 	INT_VAR 
+		/** Offset in the buffer after which the value will be written. */
 		offset = 0 - 1
-	STR_VAR 
+	STR_VAR
+		/** String value to format as a json string and write into the buffer. */
 		string = ~~
+		/** A string to write in valid json format: quoted with '"', with any '"' and '\' preceded by a'\'. */
 		json = ~~
-	RET
+	RET 
+		/** Offset in the patched buffer immediately after the written value. */
 		offset
 	BEGIN
 		PATCH_IF offset < 0 THEN BEGIN			
@@ -214,12 +251,22 @@ DEFINE_PATCH_FUNCTION write_json_string
 	
 	
 
+/** Inserts the given value into the currently patched buffer at the given offset, 
+  * pushing back any existing data. The value, given as a string parameter %value%, is
+  * written as a json string, unless it is a valid integer as returned by WeiDU's IS_AN_INT function,
+  * in which case it is written as a number.
+  * If the %offset% parameter is not specified or is negative, the value will be appended to the buffer. 
+  * Offset larger than the length of the buffer will result in an error.
+  */
 DEFINE_PATCH_FUNCTION write_as_json
-	INT_VAR
+	INT_VAR 
+		/** Offset in the buffer after which the value will be written. */
 		offset = 0 - 1
 	STR_VAR
+		/** The value to convert to json and write into the buffer. */
 		value = ~~
-	RET
+	RET 
+		/** Offset in the patched buffer immediately after the written value. */
 		offset
 	BEGIN
 		PATCH_IF IS_AN_INT ~%value%~ THEN BEGIN
@@ -235,14 +282,29 @@ DEFINE_PATCH_FUNCTION write_as_json
 	
 	
 
+/**  Writes the contents of a given array at the given offset in the currently patched buffer
+  *  as a json array. If the %rawarray% parameter is not empty, it assumed to be the name
+  *  of an existing weidu array construct, which elements are all already valid json values.
+  *  Otherwise, the %array% parameter is assumed to be the name of a WeiDU array which contents
+  *  must yet be formatted as json values. If an element can be parsed as a number, it will be
+  *  written as such; otherwise it will be formatted as a json string.
+  *  If the %offset% parameter is not specified or is negative, the value will be appended to the buffer. 
+  *  Offset larger than the length of the buffer will result in an error.
+  */
 DEFINE_PATCH_FUNCTION write_json_array 
 	INT_VAR
+		/** Offset in the buffer after which the value will be written. */
 		offset = 0 - 1
+		/** If the %size% parameter is specified, only that many first elements of the array will be written. */
 		size = 2147483647
 	STR_VAR
+		/** Name of an array containing valid json values. */
 		rawarray = ~~
+		/** Name of an array containing values to be formatted as json; checked only 
+		  * if the %rawarray% parameter is an empty string. */
 		array = ~~
 	RET
+		/** Offset in the patched buffer immediately after the written value. */
 		offset
 	BEGIN
 		PATCH_IF offset < 0 THEN BEGIN			
@@ -267,7 +329,6 @@ DEFINE_PATCH_FUNCTION write_json_array
 							WRITE_ASCII offset ~, ~
 							SET offset += 2
 						END
-						
 						LPF write_json 
 							INT_VAR offset = offset
 							STR_VAR json = EVAL ~%json%~
@@ -303,16 +364,36 @@ DEFINE_PATCH_FUNCTION write_json_array
 	END
 	
 	
-	
-DEFINE_PATCH_FUNCTION write_json_object 
-	INT_VAR 
+
+/**  Writes the contents of a given array at the given offset in the currently patched buffer
+  *  as a json object. The keys in the array are used as field names for their associated values.
+  *  If the %rawfields% parameter is not empty, it assumed to be the name of an existing weidu array, 
+  *  which keys are valid (quoted) json strings and elements are all already valid json values.
+  *  Otherwise, if the %fields% parameter is not empty, it assumed to be the name of an existing array,
+  *  which keys are arbitrary string values and need quoting before writing, but values are already
+  *  formatted json. Lastly, the %dict% parameter is assumed to be the name of a WeiDU array which both
+  *  keys and values need converting to json before writing. Keys are always formatted as strings; 
+  *  if a value can be parsed as a number, it will be written as such; otherwise it will be quoted as astring.
+  *  If the %offset% parameter is not specified or is negative, the value will be appended to the buffer. 
+  *  Offset larger than the length of the buffer will result in an error.
+  */
+DEFINE_PATCH_FUNCTION write_json_object
+	INT_VAR
+		/** Offset in the buffer after which the value will be written. */
 		offset = 0 - 1
+		/** If the %size% parameter is specified, only that many first elements of the array will be written. */
 		size = 2147483647
-	STR_VAR 
+	STR_VAR
+		/** Name of an array which keys are quoted strings and values are valid json. */
 		rawfields = ~~
-		fields = ~~
-		dict = ~~
-	RET 
+		/** Name of an array which keys are arbitrary strings and values are valid json. 
+		  * Checked only if the %rawfields% parameter is an empty string. */
+		fields = ~~		
+		/** Name of an array which both keys and values need formatting as json. 
+		  * Checked only if both the %rawfields% and %fields% parameters are empty strings. */
+		dict = ~~		
+	RET
+		/** Offset in the patched buffer immediately after the written value. */
 		offset
 	BEGIN
 		PATCH_IF offset < 0 THEN BEGIN			
@@ -346,7 +427,7 @@ DEFINE_PATCH_FUNCTION write_json_object
 						SET offset += 2
 					END
 					
-					PATCH_IF format == 1 THEN BEGIN
+					PATCH_IF format = 1 THEN BEGIN
 						LPF write_json_string 
 							INT_VAR offset = offset
 							STR_VAR json = EVAL ~%field%~ 
@@ -362,7 +443,7 @@ DEFINE_PATCH_FUNCTION write_json_object
 					WRITE_ASCII offset ~: ~
 					SET offset += 2
 					
-					PATCH_IF format == 3 THEN BEGIN
+					PATCH_IF format = 3 THEN BEGIN
 						LPF write_as_json
 							INT_VAR offset = offset
 							STR_VAR value = EVAL ~%value%~
@@ -385,19 +466,34 @@ DEFINE_PATCH_FUNCTION write_json_object
 	
 
 
+/**  Writes given json data at the specified offset in the currently patched buffer.
+  *  The argument must be in valid json format.
+  *  If the %offset% parameter is not specified or is negative, the value will be appended to the buffer. 
+  *  Offset larger than the length of the buffer will result in an error.
+  */
 DEFINE_PATCH_FUNCTION write_json
 	INT_VAR 
+		/** Offset in the buffer after which the value will be written. */
 		offset = 0 - 1
 	STR_VAR
+		/** Formatted json data to write. */
 		json = ~~
 	RET 
+		/** Offset in the patched buffer immediately after the written value. */
 		offset
 	BEGIN
-		LPM expect_valid_json
-		SET length = STRING_LENGTH ~%json%~
-		INSERT_BYTES offset length
-		WRITE_ASCIIE offset ~%json%~
-		SET offset += length
+		SET write_offset = offset
+		INNER_PATCH ~%json%~ BEGIN
+			LPF skip_json INT_VAR offset = 0 RET offset skipped END
+			LPM skipped_json_was_whole_buffer
+			PATCH_IF NOT is_json THEN BEGIN
+				PATCH_FAIL ~write_json: invalid json <<%json%>>.~
+			END
+			SET length = BUFFER_LENGTH
+		END
+		INSERT_BYTES write_offset length
+		WRITE_ASCIIE write_offset ~%json%~
+		SET offset = write_offset + length
 	END
 
 
@@ -466,7 +562,6 @@ DEFINE_ACTION_FUNCTION json_string
 	STR_VAR string = ~~
 	RET res
 	BEGIN 
-		//LAF json_escape_str STR_VAR str = EVAL ~%string%~ RET res END
 		OUTER_PATCH_SAVE res ~%string%~ BEGIN
 			REPLACE_TEXTUALLY EXACT_MATCH ~\~ ~\\\\~ 
 			REPLACE_TEXTUALLY EXACT_MATCH ~"~ ~\"~
@@ -490,6 +585,9 @@ DEFINE_PATCH_FUNCTION json_string
 
 	
 
+/** Formats the given value as json. If it is a valid integer, it is left intact.
+  * Otherwise it is quoted as a json string. 
+  */
 DEFINE_ACTION_FUNCTION to_json
 	STR_VAR value = ~~
 	RET res
@@ -502,7 +600,10 @@ DEFINE_ACTION_FUNCTION to_json
 	END
 	
 	
-	
+
+/** Formats the given value as json. If it is a valid integer, it is left intact.
+  * Otherwise it is quoted as a json string. 
+  */	
 DEFINE_PATCH_FUNCTION to_json
 	STR_VAR value = ~~
 	RET res 
@@ -691,7 +792,7 @@ DEFINE_PATCH_MACRO skip_whitespace_before_json BEGIN
 		SET offset = cursor
 	END
 	SET skipped = 0
-	LPF skip_buffer_whitespace INT_VAR offset = offset RET start = offset srclength next END
+	LPF skip_buffer_whitespace INT_VAR offset = offset RET start = offset srclength peek END
 END
 
 
@@ -719,13 +820,13 @@ DEFINE_PATCH_FUNCTION skip_json_boolean
 	BEGIN
 		LPM skip_whitespace_before_json
 
-		PATCH_IF start <= srclength - 5 AND ~%next%~ STR_EQ ~f~ THEN BEGIN
+		PATCH_IF start <= srclength - 5 AND ~%peek%~ STR_EQ ~f~ THEN BEGIN
 			READ_ASCII start val (5)
 			PATCH_IF ~%val%~ STR_EQ ~false~ THEN BEGIN
 				SET skipped = start + 5 - offset
 				SET offset = start + 5
 			END
-		END ELSE PATCH_IF start <= srclength - 4 AND ~%next%~ STR_EQ ~t~ THEN BEGIN
+		END ELSE PATCH_IF start <= srclength - 4 AND ~%peek%~ STR_EQ ~t~ THEN BEGIN
 			READ_ASCII start val (4)
 			PATCH_IF ~%val%~ STR_EQ ~true~ THEN BEGIN
 				SET skipped = start + 4 - offset
@@ -744,12 +845,12 @@ DEFINE_PATCH_FUNCTION skip_json_number
 		
 		TEXT_SPRINT digits ~0123456789~
 
-		PATCH_MATCH ~%next%~ WITH 
+		PATCH_MATCH ~%peek%~ WITH 
 			~0~ BEGIN
 				SET i = start + 1
 				PATCH_IF i < srclength THEN BEGIN				
-					READ_ASCII i next (1)
-					PATCH_MATCH ~%next%~ WITH
+					READ_ASCII i peek (1)
+					PATCH_MATCH ~%peek%~ WITH
 						~x~ ~X~ BEGIN //hexadecimal value
 							TEXT_SPRINT digits ~0123456789AaBbCcDdEeFf~
 							SET i += 1						
@@ -767,11 +868,11 @@ DEFINE_PATCH_FUNCTION skip_json_number
 						END
 						DEFAULT //decimal value							
 					END
-					READ_ASCII i next (1)
+					READ_ASCII i peek (1)
 				END
 			END
 			~+~ ~-~ BEGIN
-				LPF skip_buffer_whitespace INT_VAR offset = start + 1 RET start = offset next END
+				LPF skip_buffer_whitespace INT_VAR offset = start + 1 RET start = offset peek END
 				SET i = start
 			END
 			DEFAULT
@@ -779,11 +880,11 @@ DEFINE_PATCH_FUNCTION skip_json_number
 		END
 
 		PATCH_IF i < srclength THEN BEGIN		
-			SET continue = INDEX(CASE_SENSITIVE EXACT_MATCH ~%next%~ ~%digits%~) >= 0
+			SET continue = INDEX(CASE_SENSITIVE EXACT_MATCH ~%peek%~ ~%digits%~) >= 0
 			WHILE i < srclength - 1 AND continue BEGIN
 				SET i += 1
-				READ_ASCII i next (1)				
-				SET continue = INDEX(CASE_SENSITIVE EXACT_MATCH ~%next%~ ~%digits%~) >= 0
+				READ_ASCII i peek (1)				
+				SET continue = INDEX(CASE_SENSITIVE EXACT_MATCH ~%peek%~ ~%digits%~) >= 0
 
 			END
 			PATCH_IF continue THEN BEGIN
@@ -805,26 +906,26 @@ DEFINE_PATCH_FUNCTION skip_json_string
 	BEGIN
 		LPM skip_whitespace_before_json
 		
-		PATCH_IF ~%next%~ STR_EQ ~"~ THEN BEGIN
+		PATCH_IF ~%peek%~ STR_EQ ~"~ THEN BEGIN
 			SET i = start + 1
-			TEXT_SPRINT next ~~
+			TEXT_SPRINT peek ~~
 			
-			WHILE (i < srclength AND NOT ~%next%~ STR_EQ ~"~) BEGIN //let's find the closing '"'					
-				READ_ASCII i next (1)
+			WHILE (i < srclength AND NOT ~%peek%~ STR_EQ ~"~) BEGIN //let's find the closing '"'					
+				READ_ASCII i peek (1)
 				SET j = i //advance over all following '\' checking parity
-				WHILE (j < srclength - 1 AND ~%next%~ STR_EQ ~\~) BEGIN
+				WHILE (j < srclength - 1 AND ~%peek%~ STR_EQ ~\~) BEGIN
 					SET j += 1
-					READ_ASCII j next (1)
+					READ_ASCII j peek (1)
 				END
-				PATCH_IF ~%next%~ STR_EQ ~"~ THEN BEGIN //check if it's escaped
-					PATCH_IF (j - i) MODULO 2 == 1 THEN BEGIN //escaped
-						TEXT_SPRINT next ~~ //'hide' the '"'
+				PATCH_IF ~%peek%~ STR_EQ ~"~ THEN BEGIN //check if it's escaped
+					PATCH_IF (j - i) MODULO 2 = 1 THEN BEGIN //escaped
+						TEXT_SPRINT peek ~~ //'hide' the '"'
 					END
 				END
 				SET i = j + 1
-			END //%i% - 1 is the index of closing '"' or i==srclength => no closing '"'
+			END //%i% - 1 is the index of closing '"' or i=srclength => no closing '"'
 			
-			PATCH_IF ~%next%~ STR_EQ ~"~ THEN BEGIN //yay!
+			PATCH_IF ~%peek%~ STR_EQ ~"~ THEN BEGIN //yay!
 				SET skipped = i - offset
 				SET offset = i
 			END
@@ -840,21 +941,21 @@ DEFINE_PATCH_FUNCTION skip_json_array
 		LPM skip_whitespace_before_json			
 		SET size = 0
 		
-		PATCH_IF ~%next%~ STR_EQ ~[~ THEN BEGIN
+		PATCH_IF ~%peek%~ STR_EQ ~[~ THEN BEGIN
 			LPF skip_json INT_VAR offset = start + 1 RET i = offset skipped END
-			LPF skip_buffer_whitespace INT_VAR offset = i RET i = offset next END
+			LPF skip_buffer_whitespace INT_VAR offset = i RET i = offset peek END
 			PATCH_IF skipped THEN BEGIN
 				SET size += 1
 			END
-			WHILE skipped AND ~%next%~ STR_EQ ~,~ BEGIN
+			WHILE skipped AND ~%peek%~ STR_EQ ~,~ BEGIN
 				LPF skip_json INT_VAR offset = i + 1 RET i = offset skipped END
 				PATCH_IF skipped THEN BEGIN
-					LPF skip_buffer_whitespace INT_VAR offset = i RET i = offset next END
+					LPF skip_buffer_whitespace INT_VAR offset = i RET i = offset peek END
 					SET size += 1
 				END 					
 			END
 			
-			PATCH_IF ~%next%~ STR_EQ ~]~ THEN BEGIN
+			PATCH_IF ~%peek%~ STR_EQ ~]~ THEN BEGIN
 				SET skipped = i + 1 - offset 
 				SET offset = i + 1
 			END ELSE BEGIN
@@ -871,9 +972,9 @@ DEFINE_PATCH_FUNCTION skip_json_object_field
 	RET offset skipped
 	BEGIN
 		LPF skip_json_string INT_VAR offset = offset RET i = offset skipped END
-		LPF skip_buffer_whitespace INT_VAR offset = i RET i = offset next END
+		LPF skip_buffer_whitespace INT_VAR offset = i RET i = offset peek END
 			
-		PATCH_IF skipped AND ~%next%~ STR_EQ ~:~ THEN BEGIN
+		PATCH_IF skipped AND ~%peek%~ STR_EQ ~:~ THEN BEGIN
 			LPF skip_json INT_VAR offset = i + 1 RET i = offset skipped END
 			
 			PATCH_IF skipped THEN BEGIN
@@ -892,22 +993,22 @@ DEFINE_PATCH_FUNCTION skip_json_object
 		LPM skip_whitespace_before_json
 		SET size = 0
 		
-		PATCH_IF ~%next%~ STR_EQ ~{~ THEN BEGIN
+		PATCH_IF ~%peek%~ STR_EQ ~{~ THEN BEGIN
 			LPF skip_json_object_field INT_VAR offset = start + 1 RET i = offset skipped END
-			LPF skip_buffer_whitespace INT_VAR offset = i RET i = offset next END
+			LPF skip_buffer_whitespace INT_VAR offset = i RET i = offset peek END
 			PATCH_IF skipped THEN BEGIN
 				SET size += 1
 			END
 			
-			WHILE skipped AND ~%next%~ STR_EQ ~,~ BEGIN
+			WHILE skipped AND ~%peek%~ STR_EQ ~,~ BEGIN
 				LPF skip_json_object_field INT_VAR offset = i + 1 RET i = offset skipped END
 				PATCH_IF skipped THEN BEGIN
-					LPF skip_buffer_whitespace INT_VAR offset = i RET i = offset next END
+					LPF skip_buffer_whitespace INT_VAR offset = i RET i = offset peek END
 					SET size += 1
 				END
 			END
 			
-			PATCH_IF ~%next%~ STR_EQ ~}~ THEN BEGIN
+			PATCH_IF ~%peek%~ STR_EQ ~}~ THEN BEGIN
 				SET skipped = i + 1 - offset
 				SET offset = i + 1
 			END ELSE BEGIN
@@ -924,7 +1025,7 @@ DEFINE_PATCH_FUNCTION skip_json
 	BEGIN
 		LPM skip_whitespace_before_json
 		
-		PATCH_MATCH ~%next%~ WITH
+		PATCH_MATCH ~%peek%~ WITH
 			~"~ BEGIN
 				LPF skip_json_string INT_VAR offset = start RET offset skipped END
 			END
@@ -971,9 +1072,21 @@ END
 
 
 
+/** Reads the json boolean value following the given offset in the current patch buffer.
+  * Any leading whitespace is ignored. If the following content is not a 'true' or 'false' string,
+  * or the offset is larger than buffer length, an error is raised.
+  */
 DEFINE_PATCH_FUNCTION read_json_boolean
-	INT_VAR	offset = 0 - 1
-	RET offset res
+	INT_VAR	
+		/** Offset from which reading starts. If omitted, it defaults to zero. If negative,
+		  * the value of %cursor% variable is used instead.
+		  */
+		offset = 0
+	RET 
+		/** Offset in the buffer immediately after the read data. */
+		offset 
+		/** Read boolean value as an integer: 0 for false, 1 for true. */
+		res
 	BEGIN
 		LPM skip_whitespace_before_json
 		LPF skip_json_boolean INT_VAR offset = start RET end = offset skipped END
@@ -988,15 +1101,27 @@ DEFINE_PATCH_FUNCTION read_json_boolean
 
 
 
+/** Reads the json number following the given offset in the current patch buffer.
+  * Any leading whitespace is ignored. If the following content is not a valid integer,
+  * or the offset is larger than buffer length, an error is raised.
+  */ 
 DEFINE_PATCH_FUNCTION read_json_number
-	INT_VAR offset = 0 - 1
-	RET offset res 
+	INT_VAR	
+		/** Offset from which reading starts. If omitted, it defaults to zero. If negative,
+		  * the value of %cursor% variable is used instead.
+		  */
+		offset = 0
+	RET 
+		/** Offset in the buffer immediately after the read data. */
+		offset 
+		/** Read integer value. */
+		res
 	BEGIN 
 		LPM skip_whitespace_before_json
 		LPF skip_json_number INT_VAR offset = start RET end = offset skipped END
 
 		SET signum = 1
-		PATCH_MATCH ~%next%~ WITH
+		PATCH_MATCH ~%peek%~ WITH
 			~+~ BEGIN
 				LPF skip_buffer_whitespace INT_VAR offset = start + 1 RET start = offset END
 			END
@@ -1012,61 +1137,119 @@ DEFINE_PATCH_FUNCTION read_json_number
 	
 	
 
+/** Reads the json string following the given offset in the current patch buffer.
+  * Any leading whitespace is ignored. If the following content is not a valid string,
+  * or the offset is larger than buffer length, an error is raised.
+  * The string is returned exactly as read, without unquoting.
+  */ 
+DEFINE_PATCH_FUNCTION read_raw_json_string
+	INT_VAR	
+		/** Offset from which reading starts. If omitted, it defaults to zero. If negative,
+		  * the value of %cursor% variable is used instead.
+		  */
+		offset = 0
+	RET 
+		/** Offset in the buffer immediately after the read data. */
+		offset 
+		/** Read string in the json format without any conversion. */
+		res
+	BEGIN 
+		LPM skip_whitespace_before_json
+		LPF skip_json_string INT_VAR offset = start RET offset skipped END
+		PATCH_IF NOT skipped THEN BEGIN
+			LPF next_buffer_token 
+				INT_VAR offset = start
+				STR_VAR non_token_chars = EVAL ~]}%WHITESPACE_CHARS%,;~
+				RET token END		
+			PATCH_FAIL ~read_raw_json_string: expected a json string at #%start%='%peek%' but got '%token%'...~
+		END
+		READ_ASCII start res (offset - start)
+	END
+		
+	
+	
+/** Reads the json string following the given offset in the current patch buffer.
+  * Any leading whitespace is ignored. If the following content is not a valid string,
+  * or the offset is larger than buffer length, an error is raised.
+  * The string is converted to a standard weidu string by unquoting and unescaping.
+  */ 
 DEFINE_PATCH_FUNCTION read_json_string
-	INT_VAR offset = 0 - 1
-	RET offset res
+	INT_VAR	
+		/** Offset from which reading starts. If omitted, it defaults to zero. If negative,
+		  * the value of %cursor% variable is used instead.
+		  */
+		offset = 0
+	RET 
+		/** Offset in the buffer immediately after the read data. */
+		offset 
+		/** Read string after conversion from json. */
+		res
 	BEGIN 
 		LPM skip_whitespace_before_json
 
-		PATCH_IF ~%next%~ STR_EQ ~"~ THEN BEGIN
+		PATCH_IF ~%peek%~ STR_EQ ~"~ THEN BEGIN
 			SET size = 0
 			SET i = start + 1
-			TEXT_SPRINT next ~~
+			TEXT_SPRINT peek ~~
 			
-			WHILE (i < srclength AND NOT ~%next%~ STR_EQ ~"~) BEGIN //let's find the closing '"'					
-				READ_ASCII i next (1)
+			WHILE (i < srclength AND NOT ~%peek%~ STR_EQ ~"~) BEGIN //let's find the closing '"'					
+				READ_ASCII i peek (1)
 				SET j = i //advance over all following '\' checking parity
-				WHILE (j < srclength - 1 AND ~%next%~ STR_EQ ~\~) BEGIN
-					PATCH_IF (j - i) REM 2 == 1 THEN BEGIN
-						TEXT_SPRINT $chars(~%size%~) ~%next%~
+				WHILE (j < srclength - 1 AND ~%peek%~ STR_EQ ~\~) BEGIN
+					PATCH_IF (j - i) REM 2 = 1 THEN BEGIN
+						TEXT_SPRINT $chars(~%size%~) ~%peek%~
 						SET size += 1
 					END
 					SET j += 1
-					READ_ASCII j next (1)
+					READ_ASCII j peek (1)
 				END
-				PATCH_IF ~%next%~ STR_EQ ~"~ THEN BEGIN //check if it's escaped
-					PATCH_IF (j - i) REM 2 == 1 THEN BEGIN //escaped
-						TEXT_SPRINT next ~~ //'hide' the '"'
+				PATCH_IF ~%peek%~ STR_EQ ~"~ THEN BEGIN //check if it's escaped
+					PATCH_IF (j - i) REM 2 = 1 THEN BEGIN //escaped
+						TEXT_SPRINT peek ~~ //'hide' the '"'
 						TEXT_SPRINT $chars(~%size%~) ~"~
 						SET size += 1
 					END
 				END ELSE BEGIN
-					TEXT_SPRINT $chars(~%size%~) ~%next%~
+					TEXT_SPRINT $chars(~%size%~) ~%peek%~
 					SET size += 1
 				END
 				SET i = j + 1
-			END //%i% - 1 is the index of closing '"' or i==srclength => no closing '"'
+			END //%i% - 1 is the index of closing '"' or i=srclength => no closing '"'
 			
-			PATCH_IF ~%next%~ STR_EQ ~"~ THEN BEGIN //yay!
+			PATCH_IF ~%peek%~ STR_EQ ~"~ THEN BEGIN //yay!
 				SET offset = i
-				LPF concat STR_VAR arrayvar = ~chars~ RET res END
+				LPF concat STR_VAR array = ~chars~ RET res END
 			END ELSE BEGIN
 				PATCH_FAIL ~read_json_string: no closing '"' for opening '"' at #%offset%~
 			END
 		END	ELSE BEGIN
-			PATCH_FAIL ~read_json_string: at #%offset% expected opening '"', got: '%next%'~
+			PATCH_FAIL ~read_json_string: at #%offset% expected opening '"', got: '%peek%'~
 		END
 
 	END
 	
 	
 
+/** Reads the json value following the given offset in the current patch buffer.
+  * Any leading whitespace is ignored. The value must be either a boolean, integer or a string;
+  * otherwise an error is raised. If the value is a boolean, it is returned as either zero or one.
+  * Integral numbers are returned as integers, while strings are unquoted and unescaped to their
+  * 'normal' selves.
+  */ 
 DEFINE_PATCH_FUNCTION read_json_value
-	INT_VAR offset = 0 - 1
-	RET offset res
+	INT_VAR	
+		/** Offset from which reading starts. If omitted, it defaults to zero. If negative,
+		  * the value of %cursor% variable is used instead.
+		  */
+		offset = 0
+	RET 
+		/** Offset in the buffer immediately after the read data. */
+		offset 
+		/** Read value after conversion from json. */
+		res
 	BEGIN
 		LPM skip_whitespace_before_json
-		PATCH_MATCH ~%next%~ WITH
+		PATCH_MATCH ~%peek%~ WITH
 			~"~ BEGIN
 				LPF read_json_string INT_VAR offset = start RET offset res END
 			END
@@ -1095,34 +1278,34 @@ DEFINE_PATCH_FUNCTION read_raw_json_array
 		LPM skip_whitespace_before_json			
 		SET size = 0
 		
-		PATCH_IF ~%next%~ STR_EQ ~[~ THEN BEGIN
-			LPF skip_buffer_whitespace INT_VAR offset = start + 1 RET offset next END
+		PATCH_IF ~%peek%~ STR_EQ ~[~ THEN BEGIN
+			LPF skip_buffer_whitespace INT_VAR offset = start + 1 RET offset peek END
 			
-			PATCH_IF NOT ~%next%~ STR_EQ ~]~ THEN BEGIN
+			PATCH_IF NOT ~%peek%~ STR_EQ ~]~ THEN BEGIN
 				LPF read_json INT_VAR offset = offset RET offset json END
 				TEXT_SPRINT $res(~0~) ~%json%~ 
 				SET size += 1
-				LPF skip_buffer_whitespace INT_VAR offset = offset RET offset next END
+				LPF skip_buffer_whitespace INT_VAR offset = offset RET offset peek END
 				
-				WHILE ~%next%~ STR_EQ ~,~ BEGIN
+				WHILE ~%peek%~ STR_EQ ~,~ BEGIN
 					LPF read_json INT_VAR offset = offset + 1 RET offset json END
 					TEXT_SPRINT $res(~%size%~) ~%json%~
 					SET size += 1
-					LPF skip_buffer_whitespace INT_VAR offset = offset RET offset next END
+					LPF skip_buffer_whitespace INT_VAR offset = offset RET offset peek END
 				END
 			END
 
-			PATCH_IF NOT ~%next%~ STR_EQ ~]~ THEN BEGIN
+			PATCH_IF NOT ~%peek%~ STR_EQ ~]~ THEN BEGIN
 				READ_ASCII start prefix (offset - start)
-				PATCH_FAIL ~read_raw_json_array: expected ',' or ']', got '%next%' at #%offset% following '%prefix%'.~
+				PATCH_FAIL ~read_raw_json_array: expected ',' or ']', got '%peek%' at #%offset% following '%prefix%'.~
 			END
 			SET offset += 1
 			
-			PATCH_IF size == 0 THEN BEGIN
+			PATCH_IF size = 0 THEN BEGIN
 				TEXT_SPRINT $res(~~) ~<empty array; check size before accessing>~
 			END
 		END ELSE BEGIN
-			PATCH_FAIL ~read_raw_json_array: expected '[', got '%next%' at #%start%.~
+			PATCH_FAIL ~read_raw_json_array: expected '[', got '%peek%' at #%start%.~
 		END
 		
 	END
@@ -1137,9 +1320,59 @@ DEFINE_PATCH_FUNCTION read_json_array
 		LPF read_raw_json_array INT_VAR offset = offset RET offset size RET_ARRAY res END
 		FOR (i = 0; i < size; ++i) BEGIN
 			TEXT_SPRINT json $res(~%i%~)
-			LPF json_value STR_VAR json = EVAL ~%json%~ RET val = res END
+			INNER_PATCH ~%json%~ BEGIN
+				LPF read_json_value INT_VAR offset = 0 RET val = res END
+			END
 			TEXT_SPRINT $res(~%i%~) ~%val%~
 		END
+	END
+	
+	
+
+DEFINE_PATCH_FUNCTION read_json_array_element
+	INT_VAR 
+		offset = 0 - 1
+		idx = 0
+	STR_VAR
+		default = ~~
+	RET	res
+	BEGIN
+		PATCH_IF idx < 0 THEN BEGIN
+			TEXT_SPRINT res ~%default%~
+		END ELSE BEGIN
+			LPF skip_buffer_whitespace INT_VAR offset = offset RET offset peek END
+			
+			PATCH_IF NOT ~%peek%~ STR_EQ ~[~ THEN BEGIN
+				PATCH_FAIL ~json_array_element: expected '[' but got '%peek%' at #%offset%.~
+			END
+			
+		
+			LPF skip_buffer_whitespace INT_VAR offset = offset + 1 RET start = offset peek END
+			SET skipped = 0
+			
+			WHILE idx >= 0 AND NOT (~%peek%~ STR_EQ ~]~) BEGIN
+				PATCH_IF skipped THEN BEGIN //not the first iteration
+					PATCH_IF NOT ~%peek%~ STR_EQ ~,~ THEN BEGIN
+						PATCH_FAIL ~json_array_element: expected ',' but got '%peek%' at #%offset%.~
+					END
+					LPF skip_buffer_whitespace INT_VAR offset = offset + 1 RET start = offset END
+				END						
+
+				LPF skip_json INT_VAR offset = start RET end = offset skipped END
+				
+				PATCH_IF NOT skipped THEN BEGIN
+					PATCH_FAIL ~json_array_element: invalid json element at #%start%.~
+				END
+				LPF skip_buffer_whitespace INT_VAR offset = end RET offset peek END
+				SET idx -= 1
+			END
+			PATCH_IF idx < 0 THEN BEGIN
+				READ_ASCII start res (end - start)
+			END ELSE BEGIN
+				TEXT_SPRINT res ~%default%~
+			END
+		END	
+
 	END
 	
 	
@@ -1148,27 +1381,15 @@ DEFINE_PATCH_FUNCTION read_raw_json_object_field
 	INT_VAR offset = 0 - 1
 	RET offset field value
 	BEGIN
-		LPM skip_whitespace_before_json
-		LPF skip_json_string INT_VAR offset = start RET i = offset skipped END
-
-		PATCH_IF NOT skipped THEN BEGIN
-			LPF next_buffer_token 
-				INT_VAR offset = offset
-				STR_VAR non_token_chars = EVAL ~]}%WHITESPACE_CHARS%,;~
-				RET token END		
-			PATCH_FAIL ~read_raw_json_object_field: expected field name as string at #%offset%, got '%token%'.~
-		END
-		READ_ASCII start field (skipped)
-		LPF skip_buffer_whitespace INT_VAR offset = i RET i = offset next END
+		LPF read_raw_json_string INT_VAR offset = offset RET  i = offset field = res END		
+		LPF skip_buffer_whitespace INT_VAR offset = i RET i = offset peek END
 			
-		PATCH_IF NOT ~%next%~ STR_EQ ~:~ THEN BEGIN
+		PATCH_IF NOT ~%peek%~ STR_EQ ~:~ THEN BEGIN
 			PATCH_FAIL ~read_raw_json_object_field: missing ':' after field %field% at #%i%.~
 		END
 		LPF read_json INT_VAR offset = i + 1 RET offset value = json END
-
 	END
-	
-	
+		
 
 	
 DEFINE_PATCH_FUNCTION read_raw_json_object_fields
@@ -1178,26 +1399,26 @@ DEFINE_PATCH_FUNCTION read_raw_json_object_fields
 	BEGIN
 		LPM skip_whitespace_before_json
 		SET size = 0
-		PATCH_IF ~%next%~ STR_EQ ~{~ THEN BEGIN
-			LPF skip_buffer_whitespace INT_VAR offset = start + 1 RET offset next END
+		PATCH_IF ~%peek%~ STR_EQ ~{~ THEN BEGIN
+			LPF skip_buffer_whitespace INT_VAR offset = start + 1 RET offset peek END
 			
-			PATCH_IF NOT ~%next%~ STR_EQ ~}~ THEN BEGIN				
+			PATCH_IF NOT ~%peek%~ STR_EQ ~}~ THEN BEGIN				
 				LPF read_raw_json_object_field INT_VAR offset = offset RET offset field value END
 				TEXT_SPRINT $res(~%field%~) ~%value%~
 				SET size += 1
-				LPF skip_buffer_whitespace INT_VAR offset = offset RET offset next END
+				LPF skip_buffer_whitespace INT_VAR offset = offset RET offset peek END
 				
-				WHILE ~%next%~ STR_EQ ~,~ BEGIN
+				WHILE ~%peek%~ STR_EQ ~,~ BEGIN
 					LPF read_raw_json_object_field INT_VAR offset = offset + 1 RET offset field value END
 					TEXT_SPRINT $res(~%field%~) ~%value%~
 					SET size += 1
-					LPF skip_buffer_whitespace INT_VAR offset = offset RET offset next END
+					LPF skip_buffer_whitespace INT_VAR offset = offset RET offset peek END
 				END
 			END
 
-			PATCH_IF NOT ~%next%~ STR_EQ ~}~ THEN BEGIN
+			PATCH_IF NOT ~%peek%~ STR_EQ ~}~ THEN BEGIN
 				READ_ASCII start prefix (offset - start)
-				PATCH_FAIL ~read_raw_json_object_fields: expected ',' or '}'; got '%next%' at #%offset% following '%prefix%'.~
+				PATCH_FAIL ~read_raw_json_object_fields: expected ',' or '}'; got '%peek%' at #%offset% following '%prefix%'.~
 			END 
 			SET offset += 1
 			
@@ -1205,7 +1426,7 @@ DEFINE_PATCH_FUNCTION read_raw_json_object_fields
 				TEXT_SPRINT $res(~""~) ~"<empty object; check size before accessing>"~
 			END
 		END ELSE BEGIN
-			PATCH_FAIL ~read_raw_json_object_fields: expected '{', got '%next%' at #%start%.~
+			PATCH_FAIL ~read_raw_json_object_fields: expected '{', got '%peek%' at #%start%.~
 		END
 	END
 
@@ -1221,7 +1442,9 @@ DEFINE_PATCH_FUNCTION read_json_object_fields
 			TEXT_SPRINT $res(~~) ~<empty object; check size before accessing>~
 		END ELSE BEGIN
 			PHP_EACH fields AS field => value BEGIN
-				LPF json_string_value STR_VAR json = EVAL ~%field%~ RET name = res END
+				INNER_PATCH ~%field%~ BEGIN
+					LPF read_json_string INT_VAR offset = 0 RET name = res END
+				END
 				TEXT_SPRINT $res(~%name%~) ~%value%~
 			END
 		END
@@ -1239,8 +1462,12 @@ DEFINE_PATCH_FUNCTION read_json_as_dict
 			TEXT_SPRINT $res(~~) ~<empty object; check size before accessing>~
 		END ELSE BEGIN
 			PHP_EACH fields AS field => json BEGIN
-				LPF json_string_value STR_VAR json = EVAL ~%field%~ RET name = res END
-				LPF json_value STR_VAR json = EVAL ~%json%~ RET value = res END
+				INNER_PATCH ~%field%~ BEGIN
+					LPF read_json_string INT_VAR offset = 0 RET name = res END
+				END
+				INNER_PATCH ~%json%~ BEGIN
+					LPF read_json_value INT_VAR offset = 0 RET value = res END
+				END
 				TEXT_SPRINT $res(~%name%~) ~%value%~
 			END
 		END
@@ -1272,7 +1499,7 @@ DEFINE_PATCH_MACRO skipped_json_was_whole_buffer BEGIN
 		SET is_json = 0
 	END ELSE BEGIN
 		LPF skip_buffer_whitespace INT_VAR offset = offset RET offset srclength END
-		SET is_json = offset == srclength
+		SET is_json = offset = srclength
 	END
 END
 
@@ -1343,12 +1570,14 @@ DEFINE_PATCH_FUNCTION is_json_boolean
   */
 DEFINE_ACTION_FUNCTION is_json_number
 	STR_VAR json = ~~
-	RET is_int
+	RET 
+		is_int is_number
 	BEGIN
 		OUTER_PATCH ~%json%~ BEGIN
 			LPF skip_json_number INT_VAR offset = 0 RET offset skipped END
 			LPM skipped_json_was_whole_buffer
 			SET is_int = is_json
+			SET is_number = is_int
 		END
 	END
 
@@ -1508,7 +1737,9 @@ DEFINE_ACTION_FUNCTION validate_json
 	
 /** Fails if %json% is not a valid Json, no-op otherwise. */	
 DEFINE_PATCH_FUNCTION validate_json
-	STR_VAR json = ~~ 
+	STR_VAR 
+		json = ~~ 
+		logprefix = ~~
 	BEGIN
 		INNER_ACTION BEGIN
 			LAF validate_json 
@@ -1911,39 +2142,11 @@ DEFINE_ACTION_FUNCTION json_array_element
 			OUTER_TEXT_SPRINT res ~%default%~
 		END ELSE BEGIN
 			OUTER_PATCH ~%json%~ BEGIN
-				LPF skip_buffer_whitespace INT_VAR offset = 0 RET offset next END
-				
-				PATCH_IF NOT ~%next%~ STR_EQ ~[~ THEN BEGIN
-					PATCH_FAIL ~json_array_element: expected '[' but got '%next%' at #%offset% in json <<%json%>>.~
-				END
-				
-			
-				LPF skip_buffer_whitespace INT_VAR offset = offset + 1 RET start = offset next END
-				SET skipped = 0
-				
-				WHILE idx >= 0 AND NOT (~%next%~ STR_EQ ~]~) BEGIN
-					PATCH_IF skipped THEN BEGIN //not the first iteration
-						PATCH_IF NOT ~%next%~ STR_EQ ~,~ THEN BEGIN
-							PATCH_FAIL ~json_array_element: expected ',' but got '%next%' at #%offset% in json <<%json%>>.~
-						END
-						LPF skip_buffer_whitespace INT_VAR offset = offset + 1 RET start = offset END
-					END						
-
-					LPF skip_json INT_VAR offset = start RET end = offset skipped END
-					
-					PATCH_IF NOT skipped THEN BEGIN
-						PATCH_FAIL ~json_array_element: invalid json element at #%start% in json <<%json%>>.~
-					END
-					LPF skip_buffer_whitespace INT_VAR offset = end RET offset next END
-					SET idx -= 1
-				END
-				
-				PATCH_IF idx < 0 THEN BEGIN
-					READ_ASCII start res (end - start)
-				END ELSE BEGIN
-					TEXT_SPRINT res ~%default%~
-				END
-			END		
+				LPF read_json_array_element 
+					INT_VAR idx = idx offset = 0 
+					STR_VAR default = EVAL ~%default%~
+					RET res END
+			END
 		END
 	END
 	
@@ -1963,11 +2166,15 @@ DEFINE_PATCH_FUNCTION json_array_element
 		/** Required element as json or %default% if no such element exists. */
 		res 
 	BEGIN
-		INNER_ACTION BEGIN
-			LAF json_array_element 
-				INT_VAR idx = idx 
-				STR_VAR json = EVAL ~%json%~ default = EVAL ~%default%~
-				RET res END
+		PATCH_IF idx < 0 THEN BEGIN
+			TEXT_SPRINT res ~%default%~
+		END ELSE BEGIN
+			INNER_PATCH ~%json%~ BEGIN
+				LPF read_json_array_element 
+					INT_VAR idx = idx offset = 0 
+					STR_VAR default = EVAL ~%default%~
+					RET res END
+			END
 		END
 	END
 		
@@ -1994,11 +2201,15 @@ DEFINE_ACTION_FUNCTION json_array_at
 		ACTION_IF idx < 0 THEN BEGIN
 			FAIL ~Index out of bounds: %idx% element of %json%~
 		END
-		LAF json_array_element INT_VAR idx = idx STR_VAR json = EVAL ~%json%~ RET element = res END
-		ACTION_IF ~%element%~ STR_EQ ~~ THEN BEGIN
-			FAIL ~Index out of bounds or invalid json: %idx% element of %json%~
+		OUTER_PATCH ~%json%~ BEGIN
+			LPF read_json_array_element INT_VAR idx = idx offset = 0 RET element = res END
 		END
-		LAF json_value STR_VAR json = EVAL ~%element%~ RET res END
+		OUTER_PATCH ~%element%~ BEGIN
+			PATCH_IF NOT BUFFER_LENGTH THEN BEGIN
+				PATCH_FAIL ~Index out of bounds or invalid json: %idx% element of %json%~
+			END
+			LPF read_json_value INT_VAR offset = 0 RET res END
+		END
 	END
 	
 		
@@ -2043,19 +2254,19 @@ DEFINE_ACTION_FUNCTION json_raw_field
 				LPF json_string STR_VAR string = EVAL ~%field%~ RET rawfield = res END
 			END
 
-			LPF skip_buffer_whitespace INT_VAR offset = 0 RET offset next END
+			LPF skip_buffer_whitespace INT_VAR offset = 0 RET offset peek END
 			
-			PATCH_IF NOT ~%next%~ STR_EQ ~{~ THEN BEGIN
-				PATCH_FAIL ~json_raw_field: expected '{' but got '%next%' at #%offset% in json <<%json%>>.~
+			PATCH_IF NOT ~%peek%~ STR_EQ ~{~ THEN BEGIN
+				PATCH_FAIL ~json_raw_field: expected '{' but got '%peek%' at #%offset% in json <<%json%>>.~
 			END
 			
-			LPF skip_buffer_whitespace INT_VAR offset = offset + 1 RET offset next END
+			LPF skip_buffer_whitespace INT_VAR offset = offset + 1 RET offset peek END
 			TEXT_SPRINT property ~~
 
-			WHILE NOT (~%next%~ STR_EQ ~}~ OR ~%property%~ STR_EQ ~%rawfield%~) BEGIN
+			WHILE NOT (~%peek%~ STR_EQ ~}~ OR ~%property%~ STR_EQ ~%rawfield%~) BEGIN
 				PATCH_IF NOT ~%property%~ STR_EQ ~~ THEN BEGIN //not the first iteration
-					PATCH_IF NOT ~%next%~ STR_EQ ~,~ THEN BEGIN
-						PATCH_FAIL ~json_raw_field: expected ',' but got '%next%' at #%offset% in <<%json%>>.~
+					PATCH_IF NOT ~%peek%~ STR_EQ ~,~ THEN BEGIN
+						PATCH_FAIL ~json_raw_field: expected ',' but got '%peek%' at #%offset% in <<%json%>>.~
 					END
 					SET offset += 1
 				END
@@ -2063,7 +2274,7 @@ DEFINE_ACTION_FUNCTION json_raw_field
 				LPF read_raw_json_object_field 
 					INT_VAR offset = offset 
 					RET property = field res = value offset END
-				LPF skip_buffer_whitespace INT_VAR offset = offset RET offset next END
+				LPF skip_buffer_whitespace INT_VAR offset = offset RET offset peek END
 			END
 			
 			PATCH_IF NOT ~%property%~ STR_EQ ~%rawfield%~ THEN BEGIN
@@ -2117,7 +2328,7 @@ DEFINE_PATCH_FUNCTION json_field
 		json = ~~
 		field = ~~
 	RET res
-	BEGIN
+	BEGIN //todo: all these methods could better pass the json argument as patch buffer
 		INNER_ACTION BEGIN
 			LAF json_field 
 				STR_VAR json = EVAL ~%json%~ field = EVAL ~%field%~
@@ -2138,7 +2349,7 @@ DEFINE_ACTION_FUNCTION get_json
 		res
 	BEGIN
 		OUTER_TEXT_SPRINT res ~~
-		
+		//todo: use a simpler function for first black char without evaluating json
 		ACTION_IF NOT ~%json%~ STRING_CONTAINS_REGEXP ~^%WHITESPACE_RX%{~ THEN BEGIN //json object			
 			LAF json_object_fields 
 				STR_VAR json = EVAL ~%json%~ 
@@ -2148,6 +2359,7 @@ DEFINE_ACTION_FUNCTION get_json
 			ACTION_IF size THEN BEGIN
 				OUTER_TEXT_SPRINT prefix ~%property%~
 				OUTER_TEXT_SPRINT suffix ~~
+				OUTER_TEXT_SPRINT separator ~~
 				OUTER_SET reduced = 1
 				//iterate over property prefixes of %property% in decreasing length in search for a matching property
 				OUTER_WHILE reduced BEGIN 
@@ -2162,48 +2374,44 @@ DEFINE_ACTION_FUNCTION get_json
 					ACTION_IF NOT ~%value%~ STR_EQ ~~ THEN BEGIN
 						ACTION_CLEAR_ARRAY fields
 						LAF get_json //continue recursion with the suffix as the property
-							STR_VAR 
-								json = EVAL ~%value%~ 
-								property = EVAL ~%suffix%~
-								type = EVAL ~%type%~
+							STR_VAR json = EVAL ~%value%~ property = EVAL ~%suffix%~
 							RET res END
 						OUTER_SET reduced = 0 //terminate the loop
 					
 					END ELSE BEGIN //check the next prefix property
 						OUTER_SET reduced = 0
-						//If %prefix% starts with '.' check for property without that leading dot
-						OUTER_PATCH_SAVE name ~%prefix%~ BEGIN
-							REPLACE_TEXTUALLY CASE_SENSITIVE EVALUATE_REGEXP ~^\.~ ~~
-						END
-						ACTION_PHP_EACH fields AS field => child BEGIN
-							ACTION_IF ~%field%~ STR_EQ ~%name%~ THEN BEGIN
-								OUTER_SET reduced = 1
-								OUTER_TEXT_SPRINT prefix ~%name%~
-							END
-						END
 						//if %prefix% ends with ~[<idx>]~ move the indexing to the front of %suffix% 
-						ACTION_IF NOT reduced THEN BEGIN
-							OUTER_PATCH_SAVE prefix ~%prefix%~ BEGIN
-								REPLACE_EVALUATE CASE_SENSITIVE ~\[\([0-9]+\)\]$~ BEGIN
-									TEXT_SPRINT suffix ~[%MATCH1%]%suffix%~
-									SET reduced = 1
-								END ~~
-							END
+						OUTER_PATCH_SAVE prefix ~%prefix%~ BEGIN
+							REPLACE_EVALUATE CASE_SENSITIVE ~\[\([0-9]+\)\]$~ BEGIN
+								TEXT_SPRINT suffix ~[%MATCH1%]%separator%%suffix%~
+								TEXT_SPRINT separator ~~
+								SET reduced = 1
+							END ~~
 						END
 						//if %prefix% ends with ~.<property>~ move that simple property to the front of %suffix%
 						ACTION_IF NOT reduced THEN BEGIN
 							OUTER_PATCH_SAVE prefix ~%prefix%~ BEGIN
 								REPLACE_EVALUATE CASE_SENSITIVE ~\.\([^.]*\)$~ BEGIN
-									TEXT_SPRINT suffix ~.%MATCH1%%suffix%~
+									TEXT_SPRINT suffix ~%MATCH1%%separator%%suffix%~
+									TEXT_SPRINT separator ~.~ //the dot we swallowed in the match
 									SET reduced = 1
 								END ~~
 							END
 						END
-						//if %prefix% is non-empty, check for a ~~ property next, moving %prefix% to %suffix%
-						ACTION_IF NOT reduced AND NOT ~%prefix%~ STR_EQ ~~ THEN BEGIN //%property% is a simple property
-							OUTER_TEXT_SPRINT suffix ~%prefix%%suffix%~
-							OUTER_TEXT_SPRINT prefix ~~						
-							OUTER_SET reduced = 1
+						ACTION_IF NOT reduced THEN BEGIN
+							//if %prefix% is non-empty, check for a ~~ property next, moving %prefix% to %suffix%
+							ACTION_IF NOT ~%prefix%~ STR_EQ ~~ THEN BEGIN //%property% is a simple property
+								OUTER_TEXT_SPRINT suffix ~%prefix%%separator%%suffix%~
+								OUTER_TEXT_SPRINT prefix ~~						
+								OUTER_SET reduced = 1
+								
+							//If %prefix% starts with '.' check for a property without that leading dot	
+							END ELSE ACTION_IF ~%separator%~ STR_EQ ~.~ BEGIN
+								OUTER_TEXT_SPRINT prefix ~%suffix%~
+								OUTER_TEXT_SPRINT suffix ~~
+								OUTER_TEXT_SPRINT separator ~~
+								OUTER_SET reduced = 1
+							END
 						END
 					END
 				END
@@ -2215,22 +2423,21 @@ DEFINE_ACTION_FUNCTION get_json
 				OUTER_TEXT_SPRINT res ~%json%~
 			END
 			
-		END ELSE ACTION_IF ~%property%~ STR_EQ ~~ THEN BEGIN
+		END ELSE ACTION_IF ~%property%~ STR_EQ ~~ THEN BEGIN		
 			LAM trim_json
 			OUTER_TEXT_SPRINT res ~%json%~
-
 		END ELSE ACTION_IF NOT ~%json%~ STRING_CONTAINS_REGEXP ~^%WHITESPACE_RX%\[~ THEN BEGIN //json array
-			OUTER_PATCH_SAVE property ~%property%~ BEGIN
+			OUTER_PATCH ~%property%~ BEGIN
 				REPLACE_EVALUATE CASE_SENSITIVE ~^\[\([0-9]+\)\]\(.*\)$~ BEGIN
 					SET idx = ~%MATCH1%~
+					
 					LPF json_array_element
 						INT_VAR idx = idx 
 						STR_VAR json = EVAL ~%json%~ 
 						RET elem = res END
-						
 					PATCH_IF NOT ~%elem%~ STR_EQ ~~ THEN BEGIN
 						LPF get_json 
-							STR_VAR json = EVAL ~%elem%~ property = EVAL ~%MATCH2%~	type = EVAL ~%type%~
+							STR_VAR json = EVAL ~%elem%~ property = EVAL ~%MATCH2%~	
 							RET res END	
 					END				
 				END ~~
@@ -2252,9 +2459,9 @@ DEFINE_PATCH_FUNCTION get_json
 				RET res END
 		END
 	END
-	
-	
 
+	
+	
 DEFINE_ACTION_FUNCTION has_property
 	STR_VAR
 		json = ~~
@@ -2432,9 +2639,187 @@ DEFINE_PATCH_FUNCTION get_json_string
 
 
 
+
+
+
+
+
 /*************************************************************************************
  ********************        Json modification functions          ********************
  *************************************************************************************/ 
+
+
+
+DEFINE_ACTION_FUNCTION set_json
+	STR_VAR
+		json = ~~
+		property = ~~
+		value = ~~
+	RET
+		res
+	BEGIN		
+		PRINT ~set_json json='%json%' property='%property%' value='%value%'~
+		ACTION_IF NOT ~%json%~ STRING_CONTAINS_REGEXP ~^%WHITESPACE_RX%{~ THEN BEGIN //json object			
+			LAF json_object_fields 
+				STR_VAR json = EVAL ~%json%~ 
+				RET size 
+				RET_ARRAY fields = res END		
+			
+			OUTER_TEXT_SPRINT res ~~ 
+			
+			ACTION_IF size THEN BEGIN
+				OUTER_TEXT_SPRINT prefix ~%property%~
+				OUTER_TEXT_SPRINT suffix ~~
+				OUTER_TEXT_SPRINT separator ~~
+				OUTER_SET reduced = 1
+				//iterate over property prefixes of %property% in decreasing length in search for a matching property
+				OUTER_WHILE reduced BEGIN 
+					PRINT ~look up '%prefix%/%suffix%'~
+					OUTER_TEXT_SPRINT child ~~
+					//we search in a loop instead of using VARIABLE_IS_SET because it doesn't work
+					//with dots and other special characters in key names.
+					ACTION_PHP_EACH fields AS field => next BEGIN
+						ACTION_IF ~%field%~ STR_EQ ~%prefix%~ THEN BEGIN
+							OUTER_TEXT_SPRINT child ~%next%~
+						END
+					END
+					ACTION_IF NOT ~%child%~ STR_EQ ~~ THEN BEGIN
+						LAF set_json //continue recursion with the suffix as the property
+							STR_VAR json = EVAL ~%child%~ property = EVAL ~%suffix%~ value = EVAL ~%value%~
+							RET res END
+						OUTER_TEXT_SPRINT $fields(~%prefix%~) ~%res%~
+						LAF json_object STR_VAR fields = ~fields~ RET res END
+						OUTER_SET reduced = 0 //terminate the loop
+					
+					END ELSE BEGIN //check the next prefix property
+						OUTER_SET reduced = 0
+						//if %prefix% ends with ~[<idx>]~ move the indexing to the front of %suffix% 
+						OUTER_PATCH_SAVE prefix ~%prefix%~ BEGIN
+							REPLACE_EVALUATE CASE_SENSITIVE ~\[\([0-9]+\)\]$~ BEGIN
+								TEXT_SPRINT suffix ~[%MATCH1%]%separator%%suffix%~
+								SET reduced = 1
+								TEXT_SPRINT separator ~~									
+							END ~~
+						END
+						//if %prefix% ends with ~.<property>~ move that simple property to the front of %suffix%
+						ACTION_IF NOT reduced THEN BEGIN
+							OUTER_PATCH_SAVE prefix ~%prefix%~ BEGIN
+								REPLACE_EVALUATE CASE_SENSITIVE ~\.\([^.]*\)$~ BEGIN
+									TEXT_SPRINT suffix ~%MATCH1%%separator%%suffix%~
+									SET reduced = 1
+									TEXT_SPRINT separator ~.~
+								END ~~
+							END
+						END	
+						ACTION_IF NOT reduced THEN BEGIN
+							//if %prefix% is non-empty, check for a ~~ property next, moving %prefix% to %suffix%
+							ACTION_IF NOT ~%prefix%~ STR_EQ ~~ THEN BEGIN //%property% is a simple property
+								OUTER_TEXT_SPRINT suffix ~%prefix%%separator%%suffix%~
+								OUTER_TEXT_SPRINT prefix ~~						
+								OUTER_SET reduced = 1
+								OUTER_TEXT_SPRINT separator ~~
+							//If %property% starts with '.' check for property without that leading dot	
+							END ELSE ACTION_IF ~%separator%~ STR_EQ ~.~ THEN BEGIN							
+								OUTER_TEXT_SPRINT prefix ~%suffix%~
+								OUTER_TEXT_SPRINT suffix ~~
+								OUTER_TEXT_SPRINT separator ~~
+								OUTER_SET reduced = 1
+							END
+						END
+					END
+				END
+
+				ACTION_IF ~%res%~ STR_EQ ~~ THEN BEGIN
+					LAF validate_json STR_VAR json = EVAL ~%value%~ logprefix = ~set_json: ~ END
+					//use %suffix% instead of %property% to trim a leading dot
+					OUTER_TEXT_SPRINT $fields(~%suffix%~) ~%value%~ 
+					LAF json_object STR_VAR fields = ~fields~ RET res END
+				END				
+				
+			END ELSE BEGIN //size = 0
+				LAF validate_json STR_VAR json = EVAL ~%value%~ logprefix = ~set_json: ~ END
+				LAF json_string STR_VAR string = EVAL ~%property%~ RET field = res END
+				OUTER_TEXT_SPRINT res ~{%field%: %value%}~
+			END
+			
+		END ELSE ACTION_IF ~%property%~ STR_EQ ~~ THEN BEGIN
+			//adding new field
+			LAF validate_json STR_VAR json = EVAL ~%value%~ logprefix = ~set_json: ~ END
+			OUTER_TEXT_SPRINT res ~%value%~
+
+		END ELSE ACTION_IF NOT ~%json%~ STRING_CONTAINS_REGEXP ~^%WHITESPACE_RX%\[~ THEN BEGIN 
+			//json array
+			OUTER_PATCH_SAVE property ~%property%~ BEGIN
+				REPLACE_EVALUATE CASE_SENSITIVE ~^\[\([0-9]+\)\]\(.*\)$~ BEGIN
+					SET idx = ~%MATCH1%~
+					LPF json_to_raw_array STR_VAR json = EVAL ~%json%~ RET size RET_ARRAY elements = res END
+					
+					PATCH_IF idx < 0 OR idx > size THEN BEGIN
+						PATCH_FAIL ~set_json: index %idx% out of range <0..%size%> - can't set %property%=%value%.~
+					END
+					
+					PATCH_IF idx = size THEN BEGIN
+						PATCH_IF ~%property%~ STRING_CONTAINS_REGEXP ~^\[%idx%\]$~ THEN BEGIN
+							PATCH_FAIL ~set_json: empty array - can't set %property%=%value%~
+						END
+						LPF validate_json STR_VAR json = EVAL ~%value%~ logprefix = ~set_json: ~ END
+						
+						PATCH_IF size THEN BEGIN
+							TEXT_SPRINT $elements(~%idx%~) ~%value%~ 
+							LPF concat 
+								STR_VAR array = ~elements~ prefix = ~[~ separator = ~, ~ suffix = ~]~
+								RET res END
+						END ELSE BEGIN
+							TEXT_SPRINT res ~[%value%]~
+						END
+					
+					END ELSE BEGIN
+						INNER_PATCH_SAVE property ~%property%~ BEGIN
+							REPLACE_TEXTUALLY CASE_SENSITIVE EVALUATE_REGEXP ~^\[%idx%\]~ ~~
+						END
+						TEXT_SPRINT child $elements(~%idx%~)
+						
+						LPF set_json 
+							STR_VAR 
+								json = EVAL ~%child%~ 
+								property = EVAL ~%property%~
+								value = EVAL ~%value%~
+							RET new = res END
+						
+						TEXT_SPRINT $elements(~%idx%~) ~%new%~
+						LPF concat 
+							STR_VAR array = ~elements~ prefix = ~[~ separator = ~, ~ suffix = ~]~
+							RET res END							
+					END
+				END ~~
+			END
+		END ELSE BEGIN //not an object, not an array and %property% is not empty
+			FAIL ~set_json: can't set %property%=%value% on atomic value %json%~
+		END		
+	END
+	
+	
+	
+DEFINE_PATCH_FUNCTION set_json	
+	STR_VAR 
+		json = ~~
+		property = ~~
+		value = ~~
+	RET res
+	BEGIN
+		INNER_ACTION BEGIN
+			LAF set_json 
+				STR_VAR 
+					json = EVAL ~%json%~ 
+					property = EVAL ~%property%~
+					value = EVAL ~%value%~
+				RET res END
+		END
+	END
+
+
+
+
 
 
 
@@ -2534,7 +2919,7 @@ DEFINE_ACTION_FUNCTION update_json_array
 			
 			LAF concat 
 				INT_VAR size = i
-				STR_VAR arrayvar = ~result~ prefix = ~[~ separator = ~, ~ suffix = ~]~
+				STR_VAR array = ~result~ prefix = ~[~ separator = ~, ~ suffix = ~]~
 				RET res END
 			
 		END ELSE ACTION_IF NOT ~%set%~ STR_EQ ~~ THEN BEGIN
@@ -2549,7 +2934,7 @@ DEFINE_ACTION_FUNCTION update_json_array
 			OUTER_TEXT_SPRINT $array(~%at%~) ~%set%~
 			
 			LAF concat
-				STR_VAR arrayvar = ~array~ prefix = ~[~ separator = ~, ~ suffix = ~]~
+				STR_VAR array = ~array~ prefix = ~[~ separator = ~, ~ suffix = ~]~
 				RET res END
 		
 		END	ELSE BEGIN
@@ -2750,158 +3135,653 @@ DEFINE_PATCH_FUNCTION update_json_object
 				RET res END
 		END
 	END
-	
-	
-	
-	
-
 		
+	
+	
 
 
 
-/*		
-DEFINE_ACTION_FUNCTION set_json
+/** Applies custom patching to the json element at the given offset in the patch buffer.
+  * Recursively traverses the json structure and applies the specified patch operation to
+  * elements which path match the given selector %path%. The patch consists of three optional steps:
+  *  - matching the found element with the given regular expression %match% - if the match
+  *    fails, all other steps are skipped and the element is treated as if it did not match
+  *    the %path% selector.
+  *  - replacing the matched element with the given %patch%, which can contain regular expression
+  *    group references ~\0~, ~\1~ and so on, as if the element was the subject of
+  *    REPLACE_TEXTUALLY CASE_SENSITIVE EVALUATE_REGEXP ~%match%~ ~%patch%~
+  *  - calling the given action function %fun% with arguments %json% - the result of previous steps
+  *    and %path% - the property path leading to the patched element.
+  *  The final result can be one of the following, depending on the value of argument %as%:
+  *  - if %as% is not specified or empty, the patching happens 'in place' with the result of the patch
+  *    replacing the matched element in the bufer.
+  *  - if %as% equals ~[]~, the root element (as seen from offset %offset%) is replaced with a json array
+  *    containing all patched elements; all not matched and surrounding elements are discarded.
+  *  - if %as% equals ~{}~, the root element (as seen from offset %offset%) is replaced with a json object
+  *    with matched elements as fields. The names of the fields are the paths to the matched elements
+  *    and the values are the results of applying the patch. As with the previous case, any not matched
+  *    elements are not included in the result.
+  * The patching is limited to the first json element in the buffer following the offset %offset%;
+  * any following data is ignored.
+  */
+DEFINE_PATCH_FUNCTION patch_json
+	INT_VAR 
+		/** The offset in the current patch buffer from which the patching starts. Must be either exactly
+		  * at the start of a json element, or with only whitespace characters before a valid json element.
+		  * Defaults to the beginning of the buffer. */
+		offset = 0
 	STR_VAR
-		json = ~~
-		property = ~~
-		value = ~~
-	RET
-		res
+		/** Path selector pointing at elements which should be patched. 
+		  * It can consist of any sequence of:
+		  *  - a json string (in double quotes) matches an object field of the same name;
+		  *  - a '*' character matches all fields of an object;
+		  *  - ~[%n%]~ matches the n-th element of an array;
+		  *  - ~[%n%-%m%]~ matches the elements of an array with indices between %n% (inclusive) 
+		  *    and %m% (exclusive). Any of the two values can be missing, denoting the start 
+		  *    and the end of the array, respectively.
+		  * All whitespace surrounding the individual path elements is ignored.
+		  * An empty path points directly to the root element; this is the default value.
+		  * As follows, the path ~[-] "abilities" *~ would match all field values of any object
+		  * under the "abilities" field of any object in the root array. */
+		path = ~~
+		/** A regular expression which found elements must match in order to be patched/included. 
+		 *  If not present, it will match any element under the specified path. */
+		match = ~.*~
+		/** The replacement value for the matched elements. Defaults to ~\0~, meaning the matched
+		  * element is used without changes. */
+		patch = ~\0~
+		/** If not empty, it is treated as the name of an action function to invoke for everything
+		  * matched element. It should accept arguments %json% for the matched value and %path%
+		  * for the path leading to it. */
+		fun = ~~
+		/** Specifies the manner in which the patched elements are returned. If omitted, the patched
+		  * simply values replace the originals in the buffer. If equal to ~[]~, the root json
+		  * element is completely replaced with an array containing directly all patched elements.
+		  * If equal to ~{}~, the root json element is replaced with a json object with fields named
+		  * after concrete paths to found elements (i.e., without any wildcards) and their values
+		  * are the results of applying the patch. */		  
+		as = ~~
+	RET 
+		/** Offset in the buffer immediately following the written result. */
+		offset
 	BEGIN
-		//TODO
-		OUTER_TEXT_SPRINT res ~~
+		SET extract = 0
+		PATCH_IF ~%as%~ STR_EQ ~[]~ OR ~%as%~ STR_EQ ~array~ THEN BEGIN
+			SET extract = 1
+			TEXT_SPRINT close ~]~
+		END ELSE PATCH_IF ~%as%~ STR_EQ ~{}~ OR ~%as%~ STR_EQ ~object~ OR ~%as%~ STR_EQ ~dict~ BEGIN
+			SET extract = 2
+			TEXT_SPRINT close ~}~
+		END
+		INNER_PATCH_SAVE path ~%path%~ BEGIN //remove any trailing whitespace so we don't need to check for it later
+			REPLACE_TEXTUALLY CASE_SENSITIVE EVALUATE_REGEXP ~%WHITESPACE_RX%$~ ~~
+		END
 		
-		ACTION_IF NOT ~%json%~ STRING_CONTAINS_REGEXP ~^%WHITESPACE_RX%{~ THEN BEGIN //json object			
-			LAF json_object_fields 
-				STR_VAR json = EVAL ~%json%~ 
-				RET size 
-				RET_ARRAY fields = res END		
+		LPF patch_json_recursion
+			INT_VAR 
+				offset = offset
+				extract = extract
+				write_offset = offset
+			STR_VAR
+				path_prefix = ~~
+				path = EVAL ~%path%~
+				match = EVAL ~%match%~
+				patch = EVAL ~%patch%~
+				fun = EVAL ~%fun%~ 
+			RET offset write_offset 
+		END
+		PATCH_IF extract THEN BEGIN
+			PATCH_IF write_offset < offset THEN BEGIN
+				WRITE_ASCIIE write_offset ~%close%~
+				DELETE_BYTES (write_offset + 1) (offset - write_offset - 1)
+			END ELSE BEGIN
+				INSERT_BYTES write_offset 1
+				WRITE_ASCIIE write_offset ~%close%~
+			END
+			SET offset = write_offset + 1
+		END 
+	END
+	
+	
+
+DEFINE_PATCH_FUNCTION patch_json_recursion
+	INT_VAR 
+		offset = 0
+		extract = 0
+		write_offset = 0
+		count = 0
+	STR_VAR
+		path_prefix = ~~
+		path = ~~
+		match = ~.*~
+		patch = ~\0~
+		fun = ~~
+	RET
+		offset write_offset count
+	BEGIN		
+		PATCH_IF ~%path%~ STR_EQ ~~ THEN BEGIN
+			LPF patch_json_at_path
+				INT_VAR 
+					offset = offseet 
+					extract = extract
+					write_offset = write_offset
+					count = count
+				STR_VAR 
+					path = EVAL ~%path_prefix%~
+					match = EVAL ~%match%~
+					patch = EVAL ~%patch%~
+					fun = EVAL ~%fun%~
+				RET offset write_offset count
+			END	
 			
-			ACTION_IF size THEN BEGIN
-				OUTER_TEXT_SPRINT prefix ~%property%~
-				OUTER_TEXT_SPRINT suffix ~~
-				OUTER_SET reduced = 1
-				//iterate over property prefixes of %property% in decreasing length in search for a matching property
-				OUTER_WHILE reduced BEGIN 
-					OUTER_TEXT_SPRINT value ~~
-					//we search in a loop instead of using VARIABLE_IS_SET because it doesn't work
-					//with dots and other special characters in key names.
-					ACTION_PHP_EACH fields AS field => child BEGIN
-						ACTION_IF ~%field%~ STR_EQ ~%prefix%~ THEN BEGIN
-							OUTER_TEXT_SPRINT value ~%child%~
-						END
-					END
-					ACTION_IF NOT ~%value%~ STR_EQ ~~ THEN BEGIN
-						ACTION_CLEAR_ARRAY fields
-						LAF get_json //continue recursion with the suffix as the property
-							STR_VAR 
-								json = EVAL ~%value%~ 
-								property = EVAL ~%suffix%~
-								type = EVAL ~%type%~
-							RET res END
-						OUTER_SET reduced = 0 //terminate the loop
-					
-					END ELSE BEGIN //check the next prefix property
-						OUTER_SET reduced = 0
-						//If %prefix% starts with '.' check for property without that leading dot
-						OUTER_PATCH_SAVE name ~%prefix%~ BEGIN
-							REPLACE_TEXTUALLY CASE_SENSITIVE EVALUATE_REGEXP ~^\.~ ~~
-						END
-						ACTION_PHP_EACH fields AS field => child BEGIN
-							ACTION_IF ~%field%~ STR_EQ ~%name%~ THEN BEGIN
-								OUTER_SET reduced = 1
-								OUTER_TEXT_SPRINT prefix ~%name%~
-							END
-						END
-						//if %prefix% ends with ~[<idx>]~ move the indexing to the front of %suffix% 
-						ACTION_IF NOT reduced THEN BEGIN
-							OUTER_PATCH_SAVE prefix ~%prefix%~ BEGIN
-								REPLACE_EVALUATE CASE_SENSITIVE ~\[\([0-9]+\)\]$~ BEGIN
-									TEXT_SPRINT suffix ~[%MATCH1%]%suffix%~
-									SET reduced = 1
-								END ~~
-							END
-						END
-						//if %prefix% ends with ~.<property>~ move that simple property to the front of %suffix%
-						ACTION_IF NOT reduced THEN BEGIN
-							OUTER_PATCH_SAVE prefix ~%prefix%~ BEGIN
-								REPLACE_EVALUATE CASE_SENSITIVE ~\.\([^.]*\)$~ BEGIN
-									TEXT_SPRINT suffix ~.%MATCH1%%suffix%~
-									SET reduced = 1
-								END ~~
-							END
-						END
-						//if %prefix% is non-empty, check for a ~~ property next, moving %prefix% to %suffix%
-						ACTION_IF NOT reduced AND NOT ~%prefix%~ STR_EQ ~~ THEN BEGIN //%property% is a simple property
-							OUTER_TEXT_SPRINT suffix ~%prefix%%suffix%~
-							OUTER_TEXT_SPRINT prefix ~~						
-							OUTER_SET reduced = 1
-						END
-					END
+		END ELSE BEGIN //%path% is not empty: recurse down the json tree
+			LPM skip_whitespace_before_json
+			
+			PATCH_IF ~%peek%~ STR_EQ ~{~ THEN BEGIN //json object			
+				LPF patch_json_object_internals 
+					INT_VAR 
+						offset = offset 
+						write_offset = write_offset
+						extract = extract
+						count = count
+					STR_VAR 
+						path_prefix = EVAL ~%path_prefix%%JSON_PROPERTY_SEPARATOR%~
+						path = EVAL ~%path%~
+						match = EVAL ~%match%~ 
+						patch = EVAL ~%patch%~
+						fun = EVAL ~%fun%~
+					RET offset write_offset count
 				END
 
-			END
+			END ELSE PATCH_IF ~%peek%~ STR_EQ ~[~ THEN BEGIN //json array
+				
+				LPF patch_json_array_internals
+					INT_VAR 
+						offset = offset
+						write_offset = offset
+						extract = extract
+						count = count
+					STR_VAR 
+						path_prefix = EVAL ~%path_prefix%~
+						path = EVAL ~%path%~
+						match = EVAL ~%match%~
+						patch = EVAL ~%patch%~
+						fun = EVAL ~%fun%~
+					RET offset write_offset count
+				END
 			
-			ACTION_IF ~%res%~ STR_EQ ~~ AND ~%property%~ STR_EQ ~~ THEN BEGIN
-				LAM trim_json
-				OUTER_TEXT_SPRINT res ~%json%~
-			END
+			END ELSE BEGIN //an atomic json value
 			
-		END ELSE ACTION_IF ~%property%~ STR_EQ ~~ THEN BEGIN
-			LAM trim_json
-			OUTER_TEXT_SPRINT res ~%json%~
-
-		END ELSE ACTION_IF NOT ~%json%~ STRING_CONTAINS_REGEXP ~^%WHITESPACE_RX%\[~ THEN BEGIN //json array
-			OUTER_PATCH_SAVE property ~%property%~ BEGIN
-				REPLACE_EVALUATE CASE_SENSITIVE ~^\[\([0-9]+\)\]\(.*\)$~ BEGIN
-					SET idx = ~%MATCH1%~
-					LPF json_array_element
-						INT_VAR idx = idx 
-						STR_VAR json = EVAL ~%json%~ 
-						RET elem = res END
-						
-					PATCH_IF NOT ~%elem%~ STR_EQ ~~ THEN BEGIN
-						LPF get_json 
-							STR_VAR 
-								json = EVAL ~%elem%~ 
-								property = EVAL ~%MATCH2%~
-								type = EVAL ~%type%~
-							RET res END	
-					END				
-				END ~~
+				LPF skip_json INT_VAR offset = offset RET offset END
 			END
 		END  
 	END
-	
-	
-	
-DEFINE_PATCH_FUNCTION set_json	
-	STR_VAR 
-		json = ~~
-		property = ~~
-		value = ~~
-	RET res
+
+
+
+DEFINE_PATCH_FUNCTION map_patched_json
+	INT_VAR 
+		offset = 0
+	STR_VAR
+		path = ~~
+		match = ~~
+		patch = ~~
+		fun = ~~
+	RET 
+		offset res nochange
 	BEGIN
-		INNER_ACTION BEGIN
-			LAF set_json 
-				STR_VAR 
-					json = EVAL ~%json%~ 
-					property = EVAL ~%property%~
-					value = EVAL ~%property%~
-				RET res END
+		PATCH_IF ~%with%~ STR_EQ ~~ THEN BEGIN					
+			LPF skip_json INT_VAR offset = offset RET offset skipped END
+			
+			PATCH_IF NOT skipped THEN BEGIN
+				PATCH_FAIL ~map_patched_json: malformed json at #%offset%~
+			END
+			TEXT_SPRINT res ~~
+			SET nochange = 0						
+		
+		END ELSE BEGIN		
+			LPF read_json INT_VAR end = offset RET offset res END
+			
+			SET nochange = 1
+			PATCH_IF ~%patch%~ STR_EQ ~.*~ 
+				  OR NOT ~%res%~ STRING_MATCHES_REGEXP ~^%match%$~ THEN BEGIN
+				
+				PATCH_IF NOT ~%patch%~ STR_EQ ~\0~ THEN BEGIN
+					INNER_PATCH_SAVE res ~%res%~ BEGIN
+						SET nochange = 0
+						REPLACE_TEXTUALLY CASE_SENSITIVE EVALUATE_REGEXP ~^%match%$~ ~%patch%~
+					END
+				END
+
+				PATCH_IF NOT ~%fun%~ STR_EQ ~~ AND NOT ~%res%~ STR_EQ ~~ THEN BEGIN
+					SET nochange = 0
+					INNER_ACTION BEGIN
+						LAF ~%fun%~ STR_VAR json = EVAL ~%res%~ path = EVAL ~%path%~ RET res END
+					END
+				END
+			END
+		END	
+	END
+	
+	
+
+/** Internal function called from patch_json. End of patch recursion reached with the end of json path.
+  * matches and maps json at the given %offset% and writes the replacement to %write_offset%,
+  * shifting data if needed.
+  */
+DEFINE_PATCH_FUNCTION patch_json_at_path
+	INT_VAR 
+		offset = 0
+		extract = 0
+		write_offset = 0
+		count = 0
+		first = 0
+	STR_VAR
+		path = ~~
+		match = ~.*~
+		patch = ~\0~
+		fun = ~~
+	RET
+		offset write_offset count
+	BEGIN
+		LPF map_patched_json
+			INT_VAR offset = offset
+			STR_VAR match = EVAL ~%match%~ patch = EVAL ~%patch%~ fun = EVAL ~%fun%~ path = EVAL ~%path%~ 
+			RET end = offset nochange res 
+		END
+		PATCH_IF extract THEN BEGIN //replace everything between write_offset and offset with %prefix%				
+			PATCH_IF extract = 2 THEN BEGIN //extract as a dict with paths as keys
+				LPF json_string STR_VAR string = EVAL ~%path%~ RET field = res END
+				PATCH_IF count = 0 THEN BEGIN
+					TEXT_SPRINT prefix ~{%field%: ~
+				END ELSE BEGIN
+					TEXT_SPRINT prefix ~, %field%: ~
+				END
+			END ELSE BEGIN //extract as an array
+				PATCH_IF count = 0 THEN BEGIN
+					TEXT_SPRINT prefix ~[~
+				END ELSE BEGIN
+					TEXT_SPRINT prefix ~, ~
+				END
+			END
+			SET extra = STRING_LENGTH ~%prefix%~
+			
+			PATCH_IF nochange THEN BEGIN
+				SET shift = offset - write_offset  - extra				
+
+				PATCH_IF shift > 0 THEN BEGIN //shift back %res% to write_offset + prefix
+					WRITE_ASCIIE write_offset ~%prefix%~
+					WRITE_ASCIIE (write_offset + extra) ~%res%~
+					SET offset = end
+					SET write_offset += extra + STRING_LENGTH ~%res%~
+				END ELSE BEGIN //not enough or exactly the right space before offset
+					INSERT_BYTES write_offset (0 - shift)
+					WRITE_ASCIIE write_offset ~%prefix%~
+					SET offset = end - shift
+					SET write_offset = end - shift
+				END
+				SET count += 1
+			END ELSE BEGIN
+				SET offset = end
+				SET len = STRING_LENGTH ~%res%~
+				PATCH_IF len THEN BEGIN //if %res% is empty we must not write %prefix%
+					SET newend = write_offset + extra + STRING_LENGTH ~%res%~
+					PATCH_IF newend <= end THEN BEGIN //simply write %res% at %write_offset%
+						WRITE_ASCIIE write_offset ~%prefix%~
+						WRITE_ASCIIE (write_offset + extra) ~%res%~
+					END ELSE BEGIN //need to make space so we don't overwrite non-read portion of the buffer
+						INSERT_BYTES write_offset (newend - end)
+						WRITE_ASCIIE write_offset ~%prefix%~
+						WRITE_ASCIIE (write_offset + extra) ~%res%~
+						SET write_offset = newend
+						SET offset = newend
+					END
+					SET write_offset = newend
+					SET count += 1
+				END
+			END
+			
+		END ELSE BEGIN //leave the non-matched buffer before offset and replace only the mapped fragment
+			SET count += 1
+			PATCH_IF nochange THEN BEGIN
+				SET offset = end
+			END ELSE BEGIN
+				SET len = STRING_LENGTH ~%res%~			
+				PATCH_IF len = 0 THEN BEGIN //delete the value from the input starting from %write_offset%
+					SET count -= 1
+					PATCH_IF first THEN BEGIN //mapped value was the first in an object/array
+						LPF skip_buffer_whitespace INT_VAR offset = end RET end = offset peek END
+						PATCH_IF ~%peek%~ STR_EQ ~,~ THEN BEGIN //swallow the now leading ','
+							SET end += 1
+						END
+					END
+					DELETE_BYTES write_offset (end - write_offset)
+					SET offset = write_offset
+				END ELSE PATCH_IF len < end - offset THEN BEGIN
+					DELETE_BYTES offset (end - offset - len)					
+				END ELSE BEGIN
+					INSERT_BYTES offset (offset + len - end)
+				END
+				WRITE_ASCIIE offset ~%res%~ 
+				SET offset += len
+				SET write_offset += len
+			END
 		END
 	END
-*/
+	
+	
+	
+/** Internal function called from patch_json to proceed when the value at %offset% is a json object. */	
+DEFINE_PATCH_FUNCTION patch_json_object_internals
+	INT_VAR 
+		offset = 0
+		write_offset = 0
+		extract = 0
+		count = 0
+	STR_VAR
+		path_prefix = ~~
+		path = ~~
+		match = ~~
+		patch = ~~
+		fun = ~~
+	RET
+		offset write_offset count
+	BEGIN
+		TEXT_SPRINT current ~~
+		INNER_PATCH_SAVE suffix ~%path%~ BEGIN //split %path% into current/suffix if it starts with a string
+			REPLACE_EVALUATE ~^%WHITESPACE_RX%\(\(%JSON_STRING_RX%\)\|\*\(\*?\)\)~ BEGIN
+				TEXT_SPRINT current ~%MATCH1%~
+			END ~~
+		END
+
+		PATCH_IF ~%current%~ STR_EQ ~~ THEN BEGIN //%path% does not start with a json string
+			PATCH_LOG ~patch_json_object_internals: path <<%path%>> does not apply to json object at #%offset%.~
+			
+			LPF skip_json_object INT_VAR offset = offset RET offset skipped END
+			PATCH_IF NOT skipped THEN BEGIN
+				PATCH_FAIL ~patch_json_object_internals: malformed json object at #%offset% under <<%path_prefix%>>.~
+			END
+			
+		END ELSE BEGIN	
+			//current has the raw field name of the next json value down the line
+			LPM skip_whitespace_before_json
+			PATCH_IF NOT ~%peek%~ STR_EQ ~{~ THEN BEGIN
+				PATCH_FAIL ~patch_json_object_internals: expected '{' but got '%peek%' at #%start% under <<%path_prefix%>>.~
+			END
+			LPF skip_buffer_whitespace INT_VAR offset = start + 1 RET offset peek END
+			
+			SET first = 1
+
+			WHILE NOT ~%peek%~ STR_EQ ~}~ AND NOT ~%peek%~ STR_EQ ~~ BEGIN
+				SET mark = offset
+				PATCH_IF NOT extract THEN BEGIN
+					SET write_offset = offset //if we delete the field we erase from this point with the key
+				END
+				PATCH_IF NOT first THEN BEGIN //consume the field separator ','
+					PATCH_IF ~%peek%~ STR_EQ ~,~ THEN BEGIN
+						SET offset += 1
+					END ELSE BEGIN
+						PATCH_FAIL ~patch_json_object_internals: invalid json; expected ',' but got '%peek%' inside object under <<%path_prefix%>>.~
+					END
+				END
+
+				LPF read_raw_json_string INT_VAR offset = offset RET offset field = res END				
+				LPF skip_buffer_whitespace INT_VAR offset = offset RET offset peek END
+					
+				PATCH_IF NOT ~%peek%~ STR_EQ ~:~ THEN BEGIN
+					READ_ASCII start object_prefix (mark - start)
+					PATCH_FAIL ~patch_json_object_internals: missing ':' after field %field% at #%offset% following <<%object_prefix%>> under <<%path_prefix%>>.~
+				END
+				SET offset += 1
+				
+				PATCH_IF ~%current%~ STR_EQ ~*~ OR ~%current%~ STR_EQ ~%field%~ THEN BEGIN
+					PATCH_IF ~%suffix%~ STR_EQ ~~ THEN BEGIN
+						//substitute this field's value for the mapped replacement
+						LPF patch_json_at_path
+							INT_VAR 
+								offset = offset 
+								write_offset = write_offset 
+								extract = extract
+								count = count
+								first = first
+							STR_VAR
+								path = EVAL ~%path_prefix%%name%~
+								match = EVAL ~%match%~ patch = EVAL ~%patch%~ fun = EVAL ~%fun%~
+							RET end = offset write_offset count
+						END
+						PATCH_IF extract OR end > mark THEN BEGIN //don't expect ',' if it was deleted with the element
+							SET first = 0 
+						END
+						SET offset = end
+						
+					END ELSE BEGIN //recursively patch this field
+						LPF patch_json_recursion
+							INT_VAR 
+								offset = offset 
+								extract = extract 
+								write_offset = write_offset
+								count = count
+							STR_VAR 
+								path_prefix = EVAL ~%path_prefix%%name%~ 
+								path = EVAL ~%suffix%~
+								match = EVAL ~%match%~
+								patch = EVAL ~%patch%~
+								fun = EVAL ~%fun%~
+							RET	offset write_offset count
+						END
+						SET first = 0
+					END
+					
+				END ELSE BEGIN //leave the field as is
+				
+					LPF skip_json INT_VAR offset = offset RET offset skipped END
+					PATCH_IF NOT skipped THEN BEGIN
+						READ_ASCII start object_prefix (mark - start)
+						PATCH_FAIL ~patch_json_object_internals: invalid json field '%field%' following <<%object_prefix%>>.~
+					END
+					SET first = 0	
+				END
+				
+				LPF skip_buffer_whitespace INT_VAR offset = offset RET offset peek END
+			END	
+
+			PATCH_IF NOT ~%peek%~ STR_EQ ~}~ THEN BEGIN
+				READ_ASCII start prefix (offset - start)
+				PATCH_FAIL ~patch_json_object_internals: expected ',' or '}'; got '%peek%' at #%offset% following '%prefix%' under <<%path_prefix%>>.~
+			END 
+			SET offset += 1		
+		END		
+	END
+
+
+
+/** Internal function called from patch_json when a json_array is encountered at %offset%. */
+DEFINE_PATCH_FUNCTION patch_json_array_internals
+	INT_VAR
+		offset = 0
+		extract = 0
+		write_offset = 0
+		count = 0
+	STR_VAR
+		path_prefix = ~~
+		path = ~~
+		match = ~.*~
+		patch = ~\0~
+		fun = ~~
+	RET 
+		offset write_offset count
+	BEGIN
+		TEXT_SPRINT current ~~
+		INNER_PATCH_SAVE suffix ~%path%~ BEGIN //check if it starts with an indexing expression [..]
+			REPLACE_EVALUATE ~^%WHITESPACE_RX%\(\[\([0-9]*\)\(-\([0-9]*\)\)\]\)~ BEGIN
+				TEXT_SPRINT current ~%MATCH1%~
+				PATCH_IF ~%MATCH2%~ STR_EQ ~~ THEN BEGIN //no lower bound
+					SET from = 0
+					SET until = 0
+				END ELSE BEGIN //%MATCH2% has the lower bound
+					SET from = ~%MATCH2%~
+					SET until = from + 1
+				END
+				PATCH_IF NOT ~%MATCH3%~ STR_EQ ~~ THEN BEGIN //index range 
+					PATCH_IF ~%MATCH4%~ STR_EQ ~~ THEN BEGIN //no upper bound
+						SET until = MAX_INT
+					END ELSE BEGIN //%MATCH4% is the upper bound
+						SET until = ~%MATCH4%~
+					END
+				END					
+			END ~~
+			REPLACE_TEXTUALLY CASE_SENSITIVE EVALUATE_REGEXP ~%WHITESPACE_RX%$~ ~~			
+		END	
+
+		PATCH_IF ~%current%~ STR_EQ ~~ THEN BEGIN //%path% does not start with an indexing property
+			PATCH_LOG ~patch_json_array_internals: path <<%path%>> does not apply to json array at #%offset% under <<%path_prefix%>>.~
+			
+			LPF skip_json_array INT_VAR offset = offset RET offset skipped END
+			PATCH_IF NOT skipped THEN BEGIN
+				PATCH_FAIL ~patch_json_array_internals: malformed json array at #%offset% under <<%path_prefix%>>.~
+			END
+			
+		END ELSE BEGIN	
+			//from and until form an inclusive range of indices to patch
+			LPM skip_whitespace_before_json
+			PATCH_IF NOT ~%peek%~ STR_EQ ~[~ THEN BEGIN
+				PATCH_FAIL ~patch_json_array_internals: expected '[' but got '%peek%' at #%start% under <<%path_prefix%>>.~
+			END
+			LPF skip_buffer_whitespace INT_VAR offset = start + 1 RET offset peek END
+			
+			SET index = 0
+			SET first = 1
+			
+			WHILE NOT ~%peek%~ STR_EQ ~]~ AND NOT ~%peek%~ STR_EQ ~~ BEGIN
+				SET mark = offset
+				PATCH_IF NOT extract THEN BEGIN
+					SET write_offset = mark //if we delete this element we swallow the preceeding comma
+				END
+				PATCH_IF NOT first THEN BEGIN //consume the field separator ','
+					PATCH_IF ~%peek%~ STR_EQ ~,~ THEN BEGIN
+						SET offset += 1
+					END ELSE BEGIN
+						PATCH_FAIL ~patch_json_array_internals: invalid json; expected ',' but got '%peek%' under <<%path_prefix%[%index%]>>.~
+					END
+				END
+				
+				PATCH_IF index < from OR index > until THEN BEGIN
+					LPF skip_json INT_VAR offset = offset RET offset skipped END
+					
+					PATCH_IF NOT skipped THEN BEGIN
+						READ_ASCII start array_prefix (offset - start)
+						PATCH_FAIL ~patch_json_array_internals: invalid json element at #%offset% following <<%array_prefix%>> under <<%path_prefix%[%index%]>>.~
+					END
+					LPF skip_buffer_whitespace INT_VAR offset = offset RET offset skipped END
+					SET first = 0
+					
+				END ELSE BEGIN
+					PATCH_IF ~%suffix%~ STR_EQ ~~ THEN BEGIN
+						//substitute this element for the mapped replacement
+						LPF patch_json_at_path
+							INT_VAR
+								offset = offset
+								write_offset = write_offset
+								extract = extract
+								count = count
+								first = first
+							STR_VAR
+								path = EVAL ~%path_prefix%[%index%]~
+								match = EVAL ~%match%~ patch = EVAL ~%patch%~ fun = EVAL ~%fun%~
+							RET end = offset write_offset count
+						END
+						PATCH_IF extract OR end > mark THEN BEGIN
+							SET first = 0 //patch_json_at_path deleted the following ',' with the first element
+						END
+						SET offset = end
+						
+					END ELSE BEGIN //recursively patch this field
+						LPF patch_json
+							INT_VAR 
+								offset = offset
+								write_offset = write_offset
+								extract = extract
+								count = count
+							STR_VAR 
+								path_prefix = EVAL ~%path_prefix%[%index%]~ 
+								path = EVAL ~%suffix%~
+								match = EVAL ~%match%~
+								patch = EVAL ~%patch%~
+								fun = EVAL ~%fun%~
+							RET	offset write_offset count
+						END
+					END
+					SET first = 0					
+				END
+				
+				LPF skip_buffer_whitespace INT_VAR offset = offset RET offset peek END
+				SET index += 1
+			END	
+
+			PATCH_IF NOT ~%peek%~ STR_EQ ~]~ THEN BEGIN
+				READ_ASCII start prefix (offset - start)
+				PATCH_FAIL ~patch_json_array_internals: expected ',' or ']'; got '%peek%' at #%offset% following '%prefix%' under <<%path_prefix%>>.~
+			END 
+			SET offset += 1		
+		END			
+	END
 
 
 
 
 
 
+DEFINE_ACTION_FUNCTION map_json
+	STR_VAR 
+		json = ~~
+		path = ~~
+		match = ~.*~
+		patch = ~\0~
+		fun = ~~
+		as = ~~
+	RET
+		res
+	BEGIN
+		OUTER_PATCH_SAVE res ~%json%~ BEGIN
+			LPF patch_json STR_VAR 
+				path = EVAL ~%path%~ 
+				match = EVAL ~%match%~ patch = EVAL ~%patch%~
+				fun = EVAL ~%fun%~
+				as = EVAL ~%as%~
+			END
+		END
+	END
+	
+	
+	
+DEFINE_PATCH_FUNCTION map_json
+	STR_VAR 
+		json = ~~
+		path = ~~
+		match = ~.*~
+		patch = ~\0~
+		fun = ~~
+	RET
+		res
+	BEGIN
+		INNER_PATCH_SAVE res ~%json%~ BEGIN
+			LPF patch_json STR_VAR 
+				path = EVAL ~%path%~ 
+				match = EVAL ~%match%~ patch = EVAL ~%patch%~
+				fun = EVAL ~%fun%~
+				as = EVAL ~%as%~
+			END
+		END
+	END
+	
 
 
 
 
+		
+/*************************************************************************************
+ ********************        Reading various file formats        ********************
+ *************************************************************************************/ 
 
 
 
@@ -3005,7 +3885,7 @@ DEFINE_ACTION_FUNCTION read_2da_as_json
 			RET size RET_ARRAY array = res END
 		LAF concat
 			INT_VAR size = size
-			STR_VAR arrayvar = ~array~ prefix = ~[~ separator = ~, ~ suffix = ~]~
+			STR_VAR array = ~array~ prefix = ~[~ separator = ~, ~ suffix = ~]~
 			RET res END			
 	END
 	
@@ -3147,7 +4027,7 @@ DEFINE_ACTION_FUNCTION read_csv_as_json
 			RET size RET_ARRAY array = res END
 		LAF concat
 			INT_VAR size = size
-			STR_VAR arrayvar = ~array~ prefix = ~[~ separator = ~, ~ suffix = ~]~
+			STR_VAR array = ~array~ prefix = ~[~ separator = ~, ~ suffix = ~]~
 			RET res END			
 	END
 	
