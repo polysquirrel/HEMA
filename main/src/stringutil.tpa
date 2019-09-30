@@ -14,7 +14,7 @@ OUTER_TEXT_SPRINT WHITESPACE_CHARS ~ %WNL%%TAB%~
 /** Regexp for a single ASCII white space character. */
 OUTER_TEXT_SPRINT WHITESPACE_RX ~\([%WHITESPACE_CHARS%]*\)~
 /** Regexp for a character which is not ASCII white space. */
-OUTER_TEXT_SPRINT NOT_WHITESPACE_RX ~\([^%WHITESPACE_CHARS%]*\)~
+OUTER_TEXT_SPRINT BLACKSPACE_RX ~\([^%WHITESPACE_CHARS%]*\)~
 
 
 
@@ -253,6 +253,7 @@ DEFINE_ACTION_FUNCTION split_string
 		  * synthetic element which is not considered part of the 'real' result. */
 		res 
 	BEGIN
+		ACTION_CLEAR_ARRAY res
 		OUTER_SET srclength = STRING_LENGTH ~%string%~		
 		OUTER_SET start = 0
 		OUTER_SET size = 0
@@ -488,17 +489,34 @@ DEFINE_PATCH_FUNCTION buffer_segment_length
 	
 	
 	
+/** Calculates the length of the longest segment in the input string which starts at the given offset
+  * and in which all characters match the given regexp (or character list).
+  * If neither %chars% nor %char_rx% argument is specified, the length of the longest whitespace segment
+  * is calculated.
+  */
 DEFINE_ACTION_FUNCTION string_segment_length
 	INT_VAR 
-		offset = 0
+		/** Offset in the %string% marking the start of the calculated segment. */
+		offset = 0 
+		/** If non-zero, reading happens in the reverse direction:
+		    the calculated segment must preceed %offset%, rather than follow it. */
 		backwards = 0
 	STR_VAR
+		/** The input string on which the function operates. */
 		string = ~~
+		/** A string treated as a list of individual characters allowed in the segment. */
 		chars = ~~
+		/** Regular expression which all characters in the segment must match (if specified). */
 		char_rx = ~~
 	RET
+		/** Length of the longest segment starting with %offset% in which all characters 
+		    match %chars%/%char_rx%. */ 
 		length
+		/** Length of the input buffer, returned here simply for convenience, as the caller will
+		  * almost always want to compare the prefix length with the total length of the string. */
 		srclength
+		/** First character in the buffer after offset which does not match %char_rx%/%chars%
+		  * (at offset offset + %length%). If %length% == %srclength% then peek == ~~. */
 		peek
 	BEGIN
 		OUTER_PATCH ~%string%~ BEGIN
@@ -512,17 +530,34 @@ DEFINE_ACTION_FUNCTION string_segment_length
 	
 	
 
+/** Calculates the length of the longest segment in the input string which starts at the given offset
+  * and in which all characters match the given regexp (or character list).
+  * If neither %chars% nor %char_rx% argument is specified, the length of the longest whitespace segment
+  * is calculated.
+  */
 DEFINE_PATCH_FUNCTION string_segment_length
 	INT_VAR 
-		offset = 0
+		/** Offset in the %string% marking the start of the calculated segment. */
+		offset = 0 
+		/** If non-zero, reading happens in the reverse direction:
+		    the calculated segment must preceed %offset%, rather than follow it. */
 		backwards = 0
 	STR_VAR
+		/** The input string on which the function operates. */
 		string = ~~
+		/** A string treated as a list of individual characters allowed in the segment. */
 		chars = ~~
+		/** Regular expression which all characters in the segment must match (if specified). */
 		char_rx = ~~
 	RET
+		/** Length of the longest segment starting with %offset% in which all characters 
+		    match %chars%/%char_rx%. */ 
 		length
+		/** Length of the input buffer, returned here simply for convenience, as the caller will
+		  * almost always want to compare the prefix length with the total length of the string. */
 		srclength
+		/** First character in the buffer after offset which does not match %char_rx%/%chars%
+		  * (at offset offset + %length%). If %length% == %srclength% then peek == ~~. */
 		peek
 	BEGIN
 		INNER_PATCH ~%string%~ BEGIN
@@ -535,10 +570,22 @@ DEFINE_PATCH_FUNCTION string_segment_length
 	END
 	
 	
-	
+
+/** Moves the %offset% variable to the end of the longest whitespace segment in the patch buffer
+  * starting at %offset%.
+  */
 DEFINE_PATCH_FUNCTION skip_buffer_whitespace 
-	INT_VAR offset = 0
-	RET offset srclength peek
+	INT_VAR 
+		/** Offset in the buffer at which the reading starts. */
+		offset = 0
+	RET 
+		/** Offset of the first non-whitespace character following initial %offset% value. */
+		offset 
+		/** Length of the buffer. */
+		srclength 
+		/** The first non-whitespace character (at offset %offset%) or an empty string
+		  * if %offset% was followed only by whitespace. */
+		peek
 	BEGIN
 		PATCH_IF offset < 0 THEN BEGIN
 			SET offset = cursor
@@ -552,10 +599,27 @@ DEFINE_PATCH_FUNCTION skip_buffer_whitespace
 
 
 
+/** Reads a segment from the patch buffer which starts at a predetermined offset %offset%
+  * and ends with one of the specified characters. Returned token will be the longest
+  * substring starting at %offset% which does not contain any of the characters in string
+  * %non_token_chars%.
+  */
 DEFINE_PATCH_FUNCTION next_buffer_token
-	INT_VAR offset = 0
-	STR_VAR non_token_chars = ~~
-	RET offset srclength token
+	INT_VAR 
+		/** Offset of the first character of the returned substring. */
+		offset = 0
+	STR_VAR 
+		/** A string treated as a list of characters which terminate reading when encountered. */
+		non_token_chars = ~~
+	RET 
+		/** Offset of the first character after %token%; 
+		  * Returned value - initial value == STRING_LENGTH ~%token%~. */
+		offset 
+		/** Length of the buffer. */
+		srclength 
+		/** Fragment of the buffer starting at initial %offset% and ending at the first occurence
+		  * of any characters from the string %non_token_chars%. */
+		token
 	BEGIN
 		PATCH_IF offset < 0 THEN BEGIN
 			SET offset = cursor

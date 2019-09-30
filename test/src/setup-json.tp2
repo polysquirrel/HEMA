@@ -10,14 +10,14 @@ ALWAYS
 	DEFINE_ACTION_MACRO should_equal BEGIN
 		ACTION_IF NOT ~%res%~ STR_EQ ~%expect%~ THEN BEGIN
 			FAIL 
-~%res% 
+~<<%res%>>
   != 
-%expect%~
+<<%expect%>>~
 		END ELSE BEGIN
 			LOG 
-~%res% 
+~<<%res%>>
   == 
-%expect%~
+<<%expect%>>~
 		END
 	END
 	
@@ -846,7 +846,7 @@ INSTALL_BY_DEFAULT
 
 
 
-BEGIN ~json_get should correctly retrieve complex json properties~
+BEGIN ~get_json should correctly retrieve complex json properties~
 INSTALL_BY_DEFAULT
 	OUTER_TEXT_SPRINT expect ~"42"~
 	LAF get_json STR_VAR property = ~~ json = ~"42"~ RET res END
@@ -1126,7 +1126,248 @@ INSTALL_BY_DEFAULT
 		RET res END
 	OUTER_TEXT_SPRINT expect ~{}~
 	LAM should_equal
+
+
+
+
+
+
+BEGIN ~map_json should perform deep substitution~
+INSTALL_BY_DEFAULT
+	INCLUDE ~json-input.tpa~
+	OUTER_PATCH_SAVE expect ~%json%~ BEGIN
+		REPLACE_TEXTUALLY EVALUATE_REGEXP ~"\([-+]?\)0.5"~ ~\10.5~
+	END
+	LAF map_json 
+		STR_VAR 
+			json = EVAL ~%json%~ path = ~[-] * r".*hand" "APR"~
+			match = ~"\([-+]?\)0.5"~ patch = ~\10.5~
+		RET res END
+	LAM should_equal
 	
+	DEFINE_ACTION_FUNCTION map
+		STR_VAR json = ~~ property = ~~
+		RET res
+		BEGIN
+			OUTER_PATCH_SAVE res ~%json%~ BEGIN
+				REPLACE_TEXTUALLY CASE_SENSITIVE EVALUATE_REGEXP 
+					~{"Mis": \([0-9]*\), "Pie": \([0-9]*\), "Sla": \([0-9]*\), "Cru": \([0-9]*\)}~					
+					~"\1/\2/\3/\4"~
+			END
+		END		
+	OUTER_PATCH_SAVE expect ~%json%~ BEGIN
+		REPLACE_TEXTUALLY CASE_SENSITIVE EXACT_MATCH
+			~{"Mis": 1, "Pie": 1, "Sla": 0, "Cru": 0}~ ~"1/1/0/0"~
+	END	
+	LAF map_json
+		STR_VAR	json = EVAL ~%json%~ path = ~[2-] "*" "AC"~ map = ~map~
+		RET res END
+	LAM should_equal
+	LAF map_json
+		STR_VAR	json = EVAL ~%json%~ path = ~[2] "*" "AC"~ map = ~map~
+		RET res END
+	LAM should_equal
+			
+	DEFINE_ACTION_FUNCTION to_path
+		STR_VAR json = ~~ property = ~~
+		RET res
+		BEGIN
+			OUTER_TEXT_SPRINT res ~"%property%"~
+		END
+	OUTER_PATCH_SAVE expect ~%json%~ BEGIN
+		REPLACE_TEXTUALLY CASE_SENSITIVE EVALUATE_REGEXP 
+			~"main hand": { "THAC0": 0, "Dmg": 0 }~ 
+			~"main hand": { "THAC0": 0, "Dmg": "[3].***.main hand.Dmg" }~
+		REPLACE_TEXTUALLY CASE_SENSITIVE EXACT_MATCH
+			~"off hand": { "APR": "1", "THAC0": -2, "Dmg": 0 }~
+			~"off hand": { "APR": "1", "THAC0": -2, "Dmg": "[3].***.off hand.Dmg" }~
+	END	
+	LAF map_json
+		STR_VAR json = EVAL ~%json%~ path = ~[-4]"***"*"Dmg"~ map = ~to_path~
+		RET res END
+	LAM should_equal
+	
+	
+	
+BEGIN ~map_json should collect selected elements in an array~
+INSTALL_BY_DEFAULT
+	INCLUDE ~json-input.tpa~
+	LAF map_json
+		STR_VAR json = EVAL ~%json%~ path = ~ [-2] * "crit" ~ as = ~[]~
+		RET res END
+	OUTER_TEXT_SPRINT expect ~[1, 3, 0, 0]~
+	LAM should_equal
+		
+	LAF map_json
+		STR_VAR json = EVAL ~%json%~ path = ~ [-1] * "crit" ~ as = ~[]~
+		RET res END
+	OUTER_TEXT_SPRINT expect ~[1, 3]~
+	LAM should_equal
+
+
+
+BEGIN ~map_json should collect selected elements in an object~
+INSTALL_BY_DEFAULT
+	INCLUDE ~json-input.tpa~
+	LAF map_json 
+		STR_VAR json = EVAL ~%json%~ path = ~*"**""speed"~ as = ~{}~
+		RET res END
+	OUTER_TEXT_SPRINT expect ~{"[0].**.speed": 3, "[1].**.speed": 1}~
+	LAM should_equal
+	
+	DEFINE_ACTION_FUNCTION square
+		STR_VAR json = ~~
+		RET res 
+		BEGIN
+			OUTER_SET res = json * json
+		END
+	
+	LAF map_json 
+		STR_VAR json = EVAL ~%json%~ path = ~*"**""speed"~ as = ~{}~ map = ~square~
+		RET res END
+	OUTER_TEXT_SPRINT expect ~{"[0].**.speed": 9, "[1].**.speed": 1}~
+	LAM should_equal
+
+
+
+
+
+
+
+BEGIN ~group_json should group array elements by their property~
+INSTALL_BY_DEFAULT
+	LAF group_json STR_VAR json = ~["1", "2", "3", "2", 1, 0]~ by = ~~ RET res END
+	OUTER_TEXT_SPRINT expect 
+		~{"\"1\"": ["1"], "\"2\"": ["2", "2"], "\"3\"": ["3"], "1": [1], "0": [0]}~
+	LAM should_equal
+	
+	LAF group_json 
+		INT_VAR literal = 1
+		STR_VAR json = ~["1", "2", "3", "2", "1", "0"]~ by = ~~ 
+		RET res END
+	OUTER_TEXT_SPRINT expect 
+		~{"1": ["1", "1"], "2": ["2", "2"], "3": ["3"], "0": ["0"]}~
+	LAM should_equal
+	
+	OUTER_TEXT_SPRINT json
+		~[
+			{ "name": "Imoen", "attribute": "DEX", "value": 18 },
+			{ "name": "Minsc", "attribute": "INT", "value": 9 },
+			{ "name": "Imoen", "attribute": "INT", "value": 17 },
+			{ "name": "Minsc", "attribute": "STR", "value": "18/93" },
+			{ "name": "Imoen", "attribute": "STR", "value": 9 },
+			{ "name": "Boo", "attribute": "INT", "value": 19 }
+		]~
+	LAF group_json INT_VAR literal = 1	STR_VAR json = EVAL ~%json%~ by = "name" RET res END
+	OUTER_TEXT_SPRINT imoen
+		~[{ "name": "Imoen", "attribute": "DEX", "value": 18 }, { "name": "Imoen", "attribute": "INT", "value": 17 }, { "name": "Imoen", "attribute": "STR", "value": 9 }]~
+	OUTER_TEXT_SPRINT minsc
+		~[{ "name": "Minsc", "attribute": "INT", "value": 9 }, { "name": "Minsc", "attribute": "STR", "value": "18/93" }]~
+	OUTER_TEXT_SPRINT boo
+		~[{ "name": "Boo", "attribute": "INT", "value": 19 }]~
+	OUTER_TEXT_SPRINT expect
+		~{"Imoen": %imoen%, "Minsc": %minsc%, "Boo": %boo%}~
+	LAM should_equal
+
+	OUTER_TEXT_SPRINT json
+		~[
+			{ "outer": { "inner": 1, "a": "a" } },
+			{ "outer": { "inner": 2, "b": "b" } },
+			{ "outer": { "inner": 1, "c": "c" } },
+			{ "outer": { "inner": 2, "d": "d" } },
+			{ "outer": { "inner": 2, "e": "e" } }
+		]~
+	LAF group_json STR_VAR json = EVAL ~%json%~ by = ~outer.inner~ RET res END
+	OUTER_TEXT_SPRINT expect
+		~{"1": [{ "outer": { "inner": 1, "a": "a" } }, { "outer": { "inner": 1, "c": "c" } }], "2": [{ "outer": { "inner": 2, "b": "b" } }, { "outer": { "inner": 2, "d": "d" } }, { "outer": { "inner": 2, "e": "e" } }]}~
+	LAM should_equal
+	
+
+
+
+
+
+BEGIN ~json_array_stack should push and pop elements from a json array~
+INSTALL_BY_DEFAULT
+	LAF json_array_stack RET res top END
+	OUTER_TEXT_SPRINT expect ~[]~
+	LAM should_equal
+	OUTER_TEXT_SPRINT expect ~~
+	OUTER_TEXT_SPRINT res ~%top%~
+	LAM should_equal
+	
+	LAF json_array_stack STR_VAR json = ~ [   1,2 ]~ RET res top END
+	OUTER_TEXT_SPRINT expect ~ [1,2 ]~
+	LAM should_equal
+	OUTER_TEXT_SPRINT res ~%top%~
+	OUTER_TEXT_SPRINT expect ~1~
+	LAM should_equal
+	
+	LAF json_array_stack STR_VAR push = ~0~ RET res top END
+	OUTER_TEXT_SPRINT expect ~[0]~
+	LAM should_equal
+	OUTER_TEXT_SPRINT res ~%top%~
+	OUTER_TEXT_SPRINT expect ~0~
+	LAM should_equal
+	
+	LAF json_array_stack STR_VAR pushall = ~[1,2,3]~ RET res top END
+	OUTER_TEXT_SPRINT expect ~[1,2,3]~
+	LAM should_equal
+	OUTER_TEXT_SPRINT res ~%top%~
+	OUTER_TEXT_SPRINT expect ~1~
+	LAM should_equal
+	
+	LAF json_array_stack STR_VAR json = ~["hippo"]~ push = ~"giraffe"~ RET res top END
+	OUTER_TEXT_SPRINT expect ~["giraffe", "hippo"]~
+	LAM should_equal
+	OUTER_TEXT_SPRINT res ~%top%~
+	OUTER_TEXT_SPRINT expect ~"giraffe"~
+	LAM should_equal
+	
+	LAF json_array_stack STR_VAR json = ~["birthday"]~ pushall = ~[11,1,1981]~ RET res top END
+	OUTER_TEXT_SPRINT expect ~[11,1,1981, "birthday"]~
+	LAM should_equal
+	OUTER_TEXT_SPRINT res ~%top%~
+	OUTER_TEXT_SPRINT expect ~11~
+	
+	LAF json_array_stack INT_VAR pop=3 RET res top END
+	OUTER_TEXT_SPRINT expect ~[]~
+	LAM should_equal
+	OUTER_TEXT_SPRINT res ~%top%~
+	OUTER_TEXT_SPRINT expect ~~
+	LAM should_equal
+	
+	LAF json_array_stack INT_VAR pop=3 STR_VAR json = ~  [1,  2]  ~ RET res top END
+	OUTER_TEXT_SPRINT expect ~  []  ~
+	LAM should_equal
+	OUTER_TEXT_SPRINT res ~%top%~
+	OUTER_TEXT_SPRINT expect ~~
+	LAM should_equal
+	
+	LAF json_array_stack INT_VAR pop=2 STR_VAR json = ~[1,2,3,4]~ RET res top END
+	OUTER_TEXT_SPRINT expect ~[3,4]~
+	LAM should_equal
+	OUTER_TEXT_SPRINT res ~%top%~
+	OUTER_TEXT_SPRINT expect ~3~
+	LAM should_equal
+	
+	LAF json_array_stack 
+		INT_VAR pop = 1 
+		STR_VAR push = ~"X"~ pushall = ~[1,2,3]~ json = ~["hippo", "giraffe"]~
+		RET res top END
+	OUTER_TEXT_SPRINT expect ~["X", 1,2,3, "giraffe"]~
+	LAM should_equal
+	OUTER_TEXT_SPRINT res ~%top%~
+	OUTER_TEXT_SPRINT expect ~"X"~
+	LAM should_equal
+	
+	LAF json_array_stack
+		INT_VAR pop = 1
+		STR_VAR pushall = ~[1,2,3]~ json = ~["a very long string, really", "bottom"]~
+		RET res top END
+	OUTER_TEXT_SPRINT expect ~[1,2,3, "bottom"]~
+	LAM should_equal
+
 
 
 

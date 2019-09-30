@@ -109,6 +109,7 @@ case "$#" in
 						mkdir "$GAMEDIR/json"
 
 						cp test/src/setup-json.tp2 "$GAMEDIR"
+						cp test/src/json-input.tpa "$GAMEDIR"
 						cp main/src/json.tpa main/src/stringutil.tpa "$GAMEDIR/json"
 						cp main/bin/weidu-$system$extnesion "$GAMEDIR/setup-json$extension"
 						cd "$GAMEDIR"
