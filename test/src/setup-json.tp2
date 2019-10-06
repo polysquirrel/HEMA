@@ -1140,7 +1140,7 @@ INSTALL_BY_DEFAULT
 	END
 	LAF map_json 
 		STR_VAR 
-			json = EVAL ~%json%~ path = ~[-] * r".*hand" "APR"~
+			json = EVAL ~%json%~ select = ~[-] * r".*hand" "APR"~
 			match = ~"\([-+]?\)0.5"~ patch = ~\10.5~
 		RET res END
 	LAM should_equal
@@ -1160,11 +1160,11 @@ INSTALL_BY_DEFAULT
 			~{"Mis": 1, "Pie": 1, "Sla": 0, "Cru": 0}~ ~"1/1/0/0"~
 	END	
 	LAF map_json
-		STR_VAR	json = EVAL ~%json%~ path = ~[2-] "*" "AC"~ map = ~map~
+		STR_VAR	json = EVAL ~%json%~ select = ~[2-] "*" "AC"~ map = ~map~
 		RET res END
 	LAM should_equal
 	LAF map_json
-		STR_VAR	json = EVAL ~%json%~ path = ~[2] "*" "AC"~ map = ~map~
+		STR_VAR	json = EVAL ~%json%~ select = ~[2] "*" "AC"~ map = ~map~
 		RET res END
 	LAM should_equal
 			
@@ -1183,7 +1183,7 @@ INSTALL_BY_DEFAULT
 			~"off hand": { "APR": "1", "THAC0": -2, "Dmg": "[3].***.off hand.Dmg" }~
 	END	
 	LAF map_json
-		STR_VAR json = EVAL ~%json%~ path = ~[-4]"***"*"Dmg"~ map = ~to_path~
+		STR_VAR json = EVAL ~%json%~ select = ~[-4]"***"*"Dmg"~ map = ~to_path~
 		RET res END
 	LAM should_equal
 	
@@ -1193,24 +1193,29 @@ BEGIN ~map_json should collect selected elements in an array~
 INSTALL_BY_DEFAULT
 	INCLUDE ~json-input.tpa~
 	LAF map_json
-		STR_VAR json = EVAL ~%json%~ path = ~ [-2] * "crit" ~ as = ~[]~
+		STR_VAR json = EVAL ~%json%~ select = ~ [-2] * "crit" ~ as = ~[]~
 		RET res END
 	OUTER_TEXT_SPRINT expect ~[1, 3, 0, 0]~
 	LAM should_equal
 		
 	LAF map_json
-		STR_VAR json = EVAL ~%json%~ path = ~ [-1] * "crit" ~ as = ~[]~
+		STR_VAR json = EVAL ~%json%~ select = ~ [-1] * "crit" ~ as = ~[]~
 		RET res END
 	OUTER_TEXT_SPRINT expect ~[1, 3]~
 	LAM should_equal
 
+	LAF map_json
+		STR_VAR json = EVAL ~%json%~ select = ~[10000]~ as = ~[]~
+		RET res END
+	OUTER_TEXT_SPRINT expect ~[]~
+	LAM should_equal
 
 
 BEGIN ~map_json should collect selected elements in an object~
 INSTALL_BY_DEFAULT
 	INCLUDE ~json-input.tpa~
 	LAF map_json 
-		STR_VAR json = EVAL ~%json%~ path = ~*"**""speed"~ as = ~{}~
+		STR_VAR json = EVAL ~%json%~ select = ~*"**""speed"~ as = ~{}~
 		RET res END
 	OUTER_TEXT_SPRINT expect ~{"[0].**.speed": 3, "[1].**.speed": 1}~
 	LAM should_equal
@@ -1223,12 +1228,16 @@ INSTALL_BY_DEFAULT
 		END
 	
 	LAF map_json 
-		STR_VAR json = EVAL ~%json%~ path = ~*"**""speed"~ as = ~{}~ map = ~square~
+		STR_VAR json = EVAL ~%json%~ select = ~*"**""speed"~ as = ~{}~ map = ~square~
 		RET res END
 	OUTER_TEXT_SPRINT expect ~{"[0].**.speed": 9, "[1].**.speed": 1}~
 	LAM should_equal
 
-
+	LAF map_json
+		STR_VAR json = EVAL ~%json%~ select = ~[-] "nosuch"~ as = ~{}~ 
+		RET res END
+	OUTER_TEXT_SPRINT expect ~{}~
+	LAM should_equal
 
 
 

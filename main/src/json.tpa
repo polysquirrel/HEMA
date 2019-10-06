@@ -3538,7 +3538,8 @@ DEFINE_PATCH_FUNCTION json_array_stack
 
 /** Applies custom patching to the json element at the given offset in the patch buffer.
   * Recursively traverses the json structure and applies the specified patch operation to
-  * elements which path match the given selector %path%. The patch consists of three optional steps:
+  * elements which path match the given selector %select%. The patch consists of four optional 
+  * steps:
   *  - matching the found element with the given regular expression %match% - if the match
   *    fails, all other steps are skipped and the element is treated as if it did not match
   *    the %path% selector.
@@ -3547,6 +3548,8 @@ DEFINE_PATCH_FUNCTION json_array_stack
   *    REPLACE_TEXTUALLY CASE_SENSITIVE EVALUATE_REGEXP ~%match%~ ~%patch%~
   *  - calling the given action function %map% with arguments %json% - the result of previous steps
   *    and %property% - the property path leading to the patched element.
+  *  - calling an action macro %macro% with variables %json% and %property% set to the matched 
+  *  element and its fully resolved property path.
   *  The final result can be one of the following, depending on the value of argument %as%:
   *  - if %as% is not specified or empty, the patching happens 'in place' with the result of the patch
   *    replacing the matched element in the bufer.
@@ -3575,10 +3578,10 @@ DEFINE_PATCH_FUNCTION patch_json
 		  *    and %m% (exclusive). Any of the two values can be missing, denoting the start 
 		  *    and the end of the array, respectively.
 		  * All whitespace surrounding the individual path elements is ignored.
-		  * An empty path points directly to the root element; this is the default value.
-		  * As follows, the path ~[-] "abilities" *~ would match all field values of any object
+		  * An empty selector points directly to the root element; this is the default value.
+		  * As follows, the selector ~[-] "abilities" *~ would match all field values of any object
 		  * under the "abilities" field of any object in the root array. */
-		path = ~~
+		select = ~~
 		/** A regular expression which found elements must match in order to be patched/included. 
 		 *  If not present, it will match any element under the specified path. */
 		match = ~.*~
@@ -3607,11 +3610,13 @@ DEFINE_PATCH_FUNCTION patch_json
 		PATCH_IF ~%as%~ STR_EQ ~[]~ OR ~%as%~ STR_EQ ~array~ THEN BEGIN
 			SET extract = 1
 			TEXT_SPRINT close ~]~
+			TEXT_SPRINT empty ~[]~
 		END ELSE PATCH_IF ~%as%~ STR_EQ ~{}~ OR ~%as%~ STR_EQ ~object~ OR ~%as%~ STR_EQ ~dict~ BEGIN
 			SET extract = 2
 			TEXT_SPRINT close ~}~
+			TEXT_SPRINT empty ~{}~
 		END
-		INNER_PATCH_SAVE path ~%path%~ BEGIN //remove any trailing whitespace so we don't need to check for it later
+		INNER_PATCH_SAVE select ~%select%~ BEGIN //remove any trailing whitespace so we don't need to check for it later
 			REPLACE_TEXTUALLY CASE_SENSITIVE EVALUATE_REGEXP ~%WHITESPACE_RX%$~ ~~
 		END
 		
@@ -3622,22 +3627,28 @@ DEFINE_PATCH_FUNCTION patch_json
 				write_offset = offset
 			STR_VAR
 				property = ~~
-				path = EVAL ~%path%~
+				select = EVAL ~%select%~
 				match = EVAL ~%match%~
 				patch = EVAL ~%patch%~
 				map = EVAL ~%map%~ 
 				macro = EVAL ~%macro%~
-			RET offset write_offset 
+			RET offset write_offset count
 		END
 		PATCH_IF extract THEN BEGIN
-			PATCH_IF write_offset < offset THEN BEGIN
+			SET extra_chars = 1
+			PATCH_IF count = 0 THEN BEGIN
+				SET extra_chars = 2
+				TEXT_SPRINT close ~%empty%~
+			END	
+				
+			PATCH_IF write_offset + extra_chars <= offset THEN BEGIN
 				WRITE_ASCIIE write_offset ~%close%~
-				DELETE_BYTES (write_offset + 1) (offset - write_offset - 1)
+				DELETE_BYTES (write_offset + extra_chars) (offset - write_offset - extra_chars)
 			END ELSE BEGIN
-				INSERT_BYTES write_offset 1
+				INSERT_BYTES write_offset extra_chars
 				WRITE_ASCIIE write_offset ~%close%~
 			END
-			SET offset = write_offset + 1
+			SET offset = write_offset + extra_chars
 		END 
 	END
 	
@@ -3651,7 +3662,7 @@ DEFINE_PATCH_FUNCTION patch_json_recursion
 		count = 0
 	STR_VAR
 		property = ~~
-		path = ~~
+		select = ~~
 		match = ~.*~
 		patch = ~\0~
 		map = ~~
@@ -3659,7 +3670,7 @@ DEFINE_PATCH_FUNCTION patch_json_recursion
 	RET
 		offset write_offset count
 	BEGIN		
-		PATCH_IF ~%path%~ STR_EQ ~~ THEN BEGIN
+		PATCH_IF ~%select%~ STR_EQ ~~ THEN BEGIN
 			LPF patch_json_property
 				INT_VAR 
 					offset = offset 
@@ -3675,7 +3686,7 @@ DEFINE_PATCH_FUNCTION patch_json_recursion
 				RET offset write_offset count
 			END	
 			
-		END ELSE BEGIN //%path% is not empty: recurse down the json tree
+		END ELSE BEGIN //%select% is not empty: recurse down the json tree
 			LPM skip_whitespace_before_json
 
 			PATCH_IF ~%peek%~ STR_EQ ~{~ THEN BEGIN //json object			
@@ -3687,7 +3698,7 @@ DEFINE_PATCH_FUNCTION patch_json_recursion
 						count = count
 					STR_VAR 
 						property = EVAL ~%property%%JSON_PROPERTY_SEPARATOR%~
-						path = EVAL ~%path%~
+						select = EVAL ~%select%~
 						match = EVAL ~%match%~ 
 						patch = EVAL ~%patch%~
 						map = EVAL ~%map%~
@@ -3704,7 +3715,7 @@ DEFINE_PATCH_FUNCTION patch_json_recursion
 						count = count
 					STR_VAR 
 						property = EVAL ~%property%~
-						path = EVAL ~%path%~
+						select = EVAL ~%select%~
 						match = EVAL ~%match%~
 						patch = EVAL ~%patch%~
 						map = EVAL ~%map%~
@@ -3910,7 +3921,7 @@ DEFINE_PATCH_FUNCTION patch_json_array_internals
 		count = 0
 	STR_VAR
 		property = ~~
-		path = ~~
+		select = ~~
 		match = ~.*~
 		patch = ~\0~
 		map = ~~
@@ -3918,7 +3929,7 @@ DEFINE_PATCH_FUNCTION patch_json_array_internals
 		offset write_offset count
 	BEGIN
 		TEXT_SPRINT current ~~
-		INNER_PATCH_SAVE suffix ~%path%~ BEGIN //check if it starts with an indexing expression [..]
+		INNER_PATCH_SAVE suffix ~%select%~ BEGIN //check if it starts with an indexing expression [..]
 			REPLACE_EVALUATE ~^[%WHITESPACE_CHARS%]*\(\[\([0-9]*\)\(-\([0-9]*\)\)?\]\)\(.*\)$~ BEGIN
 				TEXT_SPRINT current ~%MATCH1%~
 				PATCH_IF ~%MATCH2%~ STR_EQ ~~ THEN BEGIN //no lower bound
@@ -3937,8 +3948,8 @@ DEFINE_PATCH_FUNCTION patch_json_array_internals
 				END					
 			END ~%MATCH5%~
 		END	
-		PATCH_IF ~%current%~ STR_EQ ~~ THEN BEGIN //check if %path% starts with '*' or '**'
-			INNER_PATCH_SAVE suffix ~%path%~ BEGIN
+		PATCH_IF ~%current%~ STR_EQ ~~ THEN BEGIN //check if %select% starts with '*' or '**'
+			INNER_PATCH_SAVE suffix ~%select%~ BEGIN
 				REPLACE_EVALUATE ~^[%WHITESPACE_CHARS%]*\(\*\(\*\)?\)\(.*\)$~ BEGIN
 					TEXT_SPRINT current ~%MATCH1%~
 					SET from = 0
@@ -3946,9 +3957,9 @@ DEFINE_PATCH_FUNCTION patch_json_array_internals
 				END ~%MATCH3%~
 			END
 		END
-		
-		PATCH_IF ~%current%~ STR_EQ ~~ THEN BEGIN //%path% does not start with an indexing property
-			PATCH_LOG ~patch_json_array_internals: path <<%path%>> does not apply to json array at #%offset% under <<%property%>>.~
+
+		PATCH_IF ~%current%~ STR_EQ ~~ THEN BEGIN //%select% does not start with an indexing property
+			PATCH_LOG ~patch_json_array_internals: path <<%select%>> does not apply to json array at #%offset% under <<%property%>>.~
 			
 			LPF skip_json_array INT_VAR offset = offset RET offset skipped END
 			PATCH_IF NOT skipped THEN BEGIN
@@ -4026,7 +4037,7 @@ DEFINE_PATCH_FUNCTION patch_json_array_internals
 								count = count
 							STR_VAR 
 								property = EVAL ~%property%[%index%]~ 
-								path = EVAL ~%suffix%~
+								select = EVAL ~%suffix%~
 								match = EVAL ~%match%~
 								patch = EVAL ~%patch%~
 								map = EVAL ~%map%~
@@ -4060,7 +4071,7 @@ DEFINE_PATCH_FUNCTION patch_json_object_internals
 		count = 0
 	STR_VAR
 		property = ~~
-		path = ~~
+		select = ~~
 		match = ~~
 		patch = ~~
 		map = ~~
@@ -4070,7 +4081,7 @@ DEFINE_PATCH_FUNCTION patch_json_object_internals
 	BEGIN
 		TEXT_SPRINT current ~~
 		TEXT_SPRINT regexp ~~
-		INNER_PATCH_SAVE suffix ~%path%~ BEGIN //split %path% into current/suffix if it starts with a string
+		INNER_PATCH_SAVE suffix ~%select%~ BEGIN //split %select% into current/suffix if it starts with a string
 			TEXT_SPRINT MATCH3 ~~ //because non-matching group leads to retaining the value from a previous match
 			REPLACE_EVALUATE ~^\([%WHITESPACE_CHARS%]*\(\([rR]?\)\(%JSON_STRING_RX%\)\|\*\(\*?\)\)\)\(.*\)$~ BEGIN
 				PATCH_IF NOT ~%MATCH3%~ STR_EQ ~~ THEN BEGIN
@@ -4080,14 +4091,13 @@ DEFINE_PATCH_FUNCTION patch_json_object_internals
 				END
 				SET prefix = STRING_LENGTH ~%MATCH1%~
 				LPF SUBSTRING 
-					INT_VAR start = prefix length = STRING_LENGTH ~%path%~ - prefix
-					STR_VAR string = EVAL ~%path%~
+					INT_VAR start = prefix length = STRING_LENGTH ~%select%~ - prefix
+					STR_VAR string = EVAL ~%select%~
 					RET trimmed = substring END
 			END ~%trimmed%~
 		END
-
-		PATCH_IF ~%current%~ STR_EQ ~~ AND ~%regexp%~ STR_EQ ~~ THEN BEGIN //%path% does not start with a string or regexp
-			PATCH_LOG ~patch_json_object_internals: path <<%path%>> does not apply to json object at #%offset%.~
+		PATCH_IF ~%current%~ STR_EQ ~~ AND ~%regexp%~ STR_EQ ~~ THEN BEGIN //%select% does not start with a string or regexp
+			PATCH_LOG ~patch_json_object_internals: path <<%select%>> does not apply to json object at #%offset%.~
 			
 			LPF skip_json_object INT_VAR offset = offset RET offset skipped END
 			PATCH_IF NOT skipped THEN BEGIN
@@ -4165,7 +4175,7 @@ DEFINE_PATCH_FUNCTION patch_json_object_internals
 								count = count
 							STR_VAR 
 								property = EVAL ~%property%%name%~ 
-								path = EVAL ~%suffix%~
+								select = EVAL ~%suffix%~
 								match = EVAL ~%match%~
 								patch = EVAL ~%patch%~
 								map = EVAL ~%map%~
@@ -4204,7 +4214,7 @@ DEFINE_PATCH_FUNCTION patch_json_object_internals
 DEFINE_ACTION_FUNCTION map_json
 	STR_VAR 
 		json = ~~
-		path = ~~
+		select = ~~
 		match = ~.*~
 		patch = ~\0~
 		map = ~~
@@ -4215,7 +4225,7 @@ DEFINE_ACTION_FUNCTION map_json
 	BEGIN
 		OUTER_PATCH_SAVE res ~%json%~ BEGIN
 			LPF patch_json STR_VAR 
-				path = EVAL ~%path%~ 
+				select = EVAL ~%select%~ 
 				match = EVAL ~%match%~ patch = EVAL ~%patch%~
 				map = EVAL ~%map%~
 				macro = EVAL ~%macro%~
@@ -4229,7 +4239,7 @@ DEFINE_ACTION_FUNCTION map_json
 DEFINE_PATCH_FUNCTION map_json
 	STR_VAR 
 		json = ~~
-		path = ~~
+		select = ~~
 		match = ~.*~
 		patch = ~\0~
 		map = ~~
@@ -4239,7 +4249,7 @@ DEFINE_PATCH_FUNCTION map_json
 	BEGIN
 		INNER_PATCH_SAVE res ~%json%~ BEGIN
 			LPF patch_json STR_VAR 
-				path = EVAL ~%path%~ 
+				select = EVAL ~%select%~ 
 				match = EVAL ~%match%~ patch = EVAL ~%patch%~
 				map = EVAL ~%map%~
 				macro = EVAL ~%macro%~
@@ -4394,12 +4404,16 @@ DEFINE_PATCH_FUNCTION group_json
 
 
 DEFINE_ACTION_FUNCTION read_json_file
+	INT_VAR eval = 0
 	STR_VAR file = ~~
 	RET json
 	BEGIN
 		OUTER_SET size = SIZE_OF_FILE ~%file%~
 		
 		COPY ~%file%~ ~%MOD_FOLDER%~ //just read
+			PATCH_IF eval THEN BEGIN
+				EVALUATE_BUFFER
+			END
 			READ_ASCII 0 json (%size%)  
 		BUT_ONLY_IF_IT_CHANGES
 		
@@ -4413,6 +4427,8 @@ DEFINE_ACTION_FUNCTION read_json_file
 
 
 DEFINE_ACTION_FUNCTION read_2da_as_json_array
+	INT_VAR
+		eval = 0
 	STR_VAR 
 		file = ~~
 		comment = ~~
@@ -4423,6 +4439,9 @@ DEFINE_ACTION_FUNCTION read_2da_as_json_array
 		LAF regexp_escape STR_VAR str = EVAL ~%comment%~ RET comment_rx = regexp END
 		
 		COPY ~%file%~ ~%MOD_FOLDER%/JSON4WEIDU-DELETEME.2da~
+			PATCH_IF eval THEN BEGIN
+				EVALUATE_BUFFER
+			END
 			SET size = 0 - 1
 			REPLACE_EVALUATE CASE_SENSITIVE ~^.+$~ BEGIN
 				PATCH_IF (comment STR_EQ ~~ 
@@ -4468,6 +4487,8 @@ DEFINE_ACTION_FUNCTION read_2da_as_json_array
 	
 
 DEFINE_PATCH_FUNCTION read_2da_as_json_array
+	INT_VAR
+		eval = eval
 	STR_VAR
 		file = ~~
 		comment = ~~
@@ -4476,6 +4497,7 @@ DEFINE_PATCH_FUNCTION read_2da_as_json_array
 	BEGIN
 		INNER_ACTION BEGIN
 			LAF read_2da_as_json_array
+				INT_VAR eval = eval
 				STR_VAR file = EVAL ~%file%~ comment = EVAL ~%comment%~
 				RET size RET_ARRAY res END
 		END
@@ -4484,12 +4506,15 @@ DEFINE_PATCH_FUNCTION read_2da_as_json_array
 	
 	
 DEFINE_ACTION_FUNCTION read_2da_as_json
+	INT_VAR
+		eval = 0
 	STR_VAR
 		file = ~~
 		comment = ~~
 	RET res
 	BEGIN
 		LAF read_2da_as_json_array
+			INT_VAR eval = eval
 			STR_VAR file = EVAL ~%file%~ comment = EVAL ~%comment%~
 			RET size RET_ARRAY array = res END
 		LAF concat
@@ -4501,6 +4526,8 @@ DEFINE_ACTION_FUNCTION read_2da_as_json
 	
 	
 DEFINE_PATCH_FUNCTION read_2da_as_json
+	INT_VAR
+		eval = 0
 	STR_VAR
 		file = ~~
 		comment = ~~
@@ -4508,6 +4535,7 @@ DEFINE_PATCH_FUNCTION read_2da_as_json
 	BEGIN
 		INNER_ACTION BEGIN
 			LAF read_2da_as_json 
+				INT_VAR eval = eval
 				STR_VAR file = EVAL ~%file%~ comment = EVAL ~%comment%~
 				RET res END
 		END
@@ -4519,6 +4547,7 @@ DEFINE_PATCH_FUNCTION read_2da_as_json
 
 
 DEFINE_ACTION_FUNCTION read_csv_as_json_array
+	INT_VAR eval = eval
 	STR_VAR 
 		file = ~~
 		comment = ~~
@@ -4544,6 +4573,9 @@ DEFINE_ACTION_FUNCTION read_csv_as_json_array
 		END
 		
 		COPY ~%file%~ ~%MOD_FOLDER%/JSON4WEIDU-DELETEME.csv~
+			PATCH_IF eval THEN BEGIN
+				EVALUATE_BUFFER
+			END
 			SET size = 0 - 1
 			REPLACE_EVALUATE CASE_SENSITIVE ~^.+$~ BEGIN //for non-empty lines
 				PATCH_IF (comment STR_EQ ~~ //skip whitespace and comment lines
@@ -4603,6 +4635,8 @@ DEFINE_ACTION_FUNCTION read_csv_as_json_array
 	
 
 DEFINE_PATCH_FUNCTION read_csv_as_json_array
+	INT_VAR
+		eval = 0
 	STR_VAR
 		file = ~~
 		comment = ~~
@@ -4612,6 +4646,7 @@ DEFINE_PATCH_FUNCTION read_csv_as_json_array
 	BEGIN
 		INNER_ACTION BEGIN
 			LAF read_csv_as_json_array
+				INT_VAR eval = eval
 				STR_VAR 
 					file = EVAL ~%file%~ 
 					comment = EVAL ~%comment%~
@@ -4623,6 +4658,8 @@ DEFINE_PATCH_FUNCTION read_csv_as_json_array
 	
 	
 DEFINE_ACTION_FUNCTION read_csv_as_json
+	INT_VAR
+		eval = 0
 	STR_VAR
 		file = ~~
 		comment = ~~
@@ -4630,6 +4667,7 @@ DEFINE_ACTION_FUNCTION read_csv_as_json
 	RET res
 	BEGIN
 		LAF read_csv_as_json_array
+			INT_VAR eval = eval
 			STR_VAR 
 				file = EVAL ~%file%~ 
 				comment = EVAL ~%comment%~
@@ -4644,6 +4682,8 @@ DEFINE_ACTION_FUNCTION read_csv_as_json
 	
 	
 DEFINE_PATCH_FUNCTION read_csv_as_json
+	INT_VAR 
+		eval = 0
 	STR_VAR
 		file = ~~
 		comment = ~~
@@ -4652,6 +4692,7 @@ DEFINE_PATCH_FUNCTION read_csv_as_json
 	BEGIN
 		INNER_ACTION BEGIN
 			LAF read_csv_as_json 
+				INT_VAR eval = eval
 				STR_VAR 
 					file = EVAL ~%file%~ 
 					comment = EVAL ~%comment%~
